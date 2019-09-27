@@ -26,7 +26,7 @@ INPUTS
         the name of the hdf5 file
     file (h5py.File)
         the h5py file object of the hdf5 file
-(the type should be given with the isH5pyObject parameter below;
+(the type should be given with the isFilename parameter below;
 it is assumed to be a h5py object by default)
 
 PARAMETERS
@@ -192,7 +192,7 @@ INPUTS
         the name of the hdf5 file
     file (h5py.File)
         the h5py file object of the hdf5 file
-(the type should be given with the isH5pyObject parameter below;
+(the type should be given with the isFilename parameter below;
 it is assumed to be a h5py object by default)
     field_name (string)
         the name of the field as specified in the hdf5 file
