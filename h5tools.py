@@ -263,7 +263,7 @@ def read_flash(file, field_name, isFilename=False, verbose=False) :
 
     # top right corner
     box_loc_tr = box_coords[proc_id] + block_sizes[proc_id]/2
-    index_tr = np.rint( (box_loc_tr - L_bl)/L_cell ).astype(int) - 1
+    index_tr = np.rint( (box_loc_tr - L_bl)/L_cell ).astype(int)
 
     if verbose : print("proc_id: {}  indices from {} to {}".format(proc_id, index_bl, index_tr))
 
