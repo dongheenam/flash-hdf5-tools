@@ -128,12 +128,14 @@ DESCRIPTION
     container for a FLASH hdf5 file and its parameters
 
 INPUTS
-    filename (string)
-        the name of the hdf5 file
+    path (string)
+        the full path to the hdf5 file
 
 VARIABLES
+    H5file.dir_to_file (string)
+        the directory where the file is located
     H5file.filename (string)
-        the specified filename of the hdf5 file
+        the name of the hdf5 file
     H5file.h5f (h5py.File)
         the h5py File object
     H5file.params (dictionary)
@@ -146,9 +148,10 @@ METHODS
 """
 class H5file :
 
-  def __init__(self, filename) :
-    self.filename = filename
-    self.h5f = h5py.File(filename, 'r')
+  def __init__(self, path) :
+    self.dir_to_file = path[path.rfind('/')+1 : ]
+    self.filename = path[ : path.rfind('/')+1]
+    self.h5f = h5py.File(path, 'r')
 
     int_params = read_parameters(self.h5f, 'integer runtime parameters')
     real_params = read_parameters(self.h5f, 'real runtime parameters')
@@ -236,7 +239,38 @@ class H5file :
     def mean(self) :
       return np.mean(self.data)
 
-    def calc_ft(self) :
+    def save_to_hdf5(self, list_data_to_save, list_name, path_to_save=None) :
+        if path_to_save is None :
+          path_to_save = "{}{}_{}.hdf5".format(
+                      self.H5file.dir_to_file, self.H5file.filename, list_name[-1] )
+
+        h5_out = h5py.File(path_to_save,'w')
+        for data_to_save, name in zip(list_data_to_save, list_name) :
+          print("{} saving to: {}...".format( name, path_to_save ))
+          h5_out.create_dataset(name, data=data_to_save)
+        h5_out.close()
+        print("file saved!")
+
+    def save_to_dat(self, list_data_to_save, list_name, path_to_save=None) :
+      if path_to_save is None :
+        path_to_save = "{}{}_{}.dat".format(
+                    self.H5file.dir_to_file, self.H5file.filename, list_name[-1] )
+
+      dat_out = open(path_to_save, mode='w')
+      print("{} saving to: {}...".format( list_name[-1], path_to_save ))
+
+      col_length = len(list_name)
+      row_length = len(list_data_to_save[-1])
+      file.write(("{:20s}"*col_length+'\n').format(*tuple(list_name)))
+
+      for i in range(row_length) :
+        tuple_row = tuple( [data[i] for data in list_data_to_save] )
+        file.write(("{:20.11E}"*col_length+'\n').format(*tuple_row))
+
+      file.close()
+      print("file saved!")
+
+    def calc_ft(self, save=False, save_path=None) :
       print("performing fast fourier transform...")
       rms_field = np.sqrt(np.average(self.data**2))
 
@@ -247,7 +281,12 @@ class H5file :
       print("sum_power        : {}".format(sum_power))
       print("rms_squared_field: {}".format(rms_field**2))
 
-    def calc_ps(self, calc_1D=True) :
+      if save is True :
+        dataset_name = self.dataname + "ft"
+        self.save_to_hdf5([self.ft], [dataset_name], path_to_save=save_path)
+
+    def calc_ps(self, calc_1D=True,
+                save_1D=False, save_1D_path=None, save_3D=False, save_3D_path=None) :
       try :
         self.ft
         print("fourier field found!")
@@ -284,7 +323,11 @@ class H5file :
 
       self.ps_3D = ps_3D
       self.k = k_bins
-      print("three-dimensional power spectrum saved!")
+      print("three-dimensional power spectrum computed!")
+
+      if save_3D is True :
+        dataset_name = self.dataname + "3Dps"
+        self.save_to_hdf5([self.k_3Darray,self.ps_3D], ['k',dataset_name], path_to_save=save_3D_path)
 
       if calc_1D :
         ps_1D = np.zeros(len(k_bins))
@@ -298,6 +341,10 @@ class H5file :
         print("sum_powerspec    : {}".format(np.sum(ps_1D)))
 
         self.ps = ps_1D
+
+        if save_1D is True :
+          dataset_name = self.dataname + "ps"
+          self.save_to_dat([self.k,self.ps], ['k',dataset_name], path_to_save=save_1D_path)
 
   """
   ================================================================================
@@ -377,7 +424,38 @@ class H5file :
         self.datay = sort(H5file, H5file.h5f[dataname+'y'])
         self.dataz = sort(H5file, H5file.h5f[dataname+'z'])
 
-    def calc_ps(self, calc_1D=True) :
+    def save_to_hdf5(self, data_to_save, name, path_to_save=None) :
+        if path_to_save is None :
+          path_to_save = "{}{}_{}.hdf5".format(
+                      self.H5file.dir_to_file, self.H5file.filename, name )
+
+        print("{} saving to: {}...".format( name, path_to_save ))
+        h5_out = h5py.File(path_to_save,'w')
+        h5_out.create_dataset(name, data=data_to_save)
+        h5_out.close()
+        print("file saved!")
+
+    def save_to_dat(self, list_data_to_save, list_name, path_to_save=None) :
+      if path_to_save is None :
+        path_to_save = "{}{}_{}.dat".format(
+                    self.H5file.dir_to_file, self.H5file.filename, list_name[-1] )
+
+      dat_out = open(path_to_save, mode='w')
+      print("{} saving to: {}...".format( list_name[-1], path_to_save ))
+
+      col_length = len(list_name)
+      row_length = len(list_data_to_save[-1])
+      file.write(("{:20s}"*col_length+'\n').format(*tuple(list_name)))
+
+      for i in range(row_length) :
+        tuple_row = tuple( [data[i] for data in list_data_to_save] )
+        file.write(("{:20.11E}"*col_length+'\n').format(*tuple_row))
+
+      file.close()
+      print("file saved!")
+
+    def calc_ps(self, calc_1D=True,
+                save_1D=False, save_1D_path=None, save_3D=False, save_3D_path=None) :
 
       print("calculating the power spectrum...")
       dims = np.array(self.H5file.params['dims'])
@@ -391,6 +469,7 @@ class H5file :
       list_name = [self.dataname+s for s in ['x','y','z']]
       for comp, comp_name in zip(list_comp, list_name) :
 
+        # begin loop over components
         if comp is None :
           print("loading the field...")
           comp = sort(self.H5file, self.H5file.h5f[comp_name])
@@ -408,6 +487,7 @@ class H5file :
 
         comp = None
         gc.collect()
+        # begin loop over components
 
       sum_power = np.sum(ps_3D)
       print("sum_power        : {}".format(sum_power))
@@ -436,7 +516,11 @@ class H5file :
 
       self.ps3D = ps_3D
       self.k = k_bins
-      print("three-dimensional power spectrum saved!")
+      print("three-dimensional power spectrum calculated!")
+
+      if save_3D is True :
+        dataset_name = self.dataname + "3Dps"
+        self.save_to_hdf5([self.k_3Darray,self.ps_3D], ['k',dataset_name], path_to_save=save_3D_path)"
 
       if calc_1D :
         ps_1D = np.zeros(len(k_bins))
@@ -450,3 +534,7 @@ class H5file :
         print("sum_powerspec    : {}".format(np.sum(ps_1D)))
 
         self.ps = ps_1D
+
+        if save_1D is True :
+          dataset_name = self.dataname + "ps"
+          self.save_to_dat([self.k,self.ps], ['k',dataset_name], path_to_save=save_1D_path)
