@@ -1,8 +1,10 @@
 # DEPENDENCIES
-import h5py
+import gc                     # garbage collection
+
+import h5py                   # hdf5 handling
 import numpy as np
-import pytools
-from scipy import fftpack
+
+import pytools                # my tools for python
 
 """
 FUNCTION dict = read_parameters(h5f, dataname)
@@ -212,6 +214,13 @@ class H5file :
       Dataset.data (np.array[N_x,N_y,N_z])
           the raw field values
 
+      Dataset.ft (complex[k_x, k_y, k_z])     <== Dataset.calc_ft()
+          the three-dimensional complex fourier field of .data
+      Dataset.ps_3D (float[k_x, k_y, k_z])     <== Dataset.calc_ps()
+          the three-dimensional power spectrum of .data
+      Dataset.ps (np.array[k_max])            <== Dataset.calc_ps(calc_1D=True)
+          the one-dimensional power spectrum of .data
+
   METHODS
       mean = Dataset.mean()
           returns the mean value of the data
@@ -221,6 +230,7 @@ class H5file :
 
     def __init__(self, H5file, dataname) :
       self.H5file = H5file
+      self.dataname = dataname
       self.data = sort(H5file, H5file.h5f[dataname])
 
     def mean(self) :
@@ -237,16 +247,16 @@ class H5file :
       print("sum_power        : {}".format(sum_power))
       print("rms_squared_field: {}".format(rms_field**2))
 
-    def calc_ps(self) :
-      print("calculating the power spectrum...")
+    def calc_ps(self, calc_1D=True) :
       try :
         self.ft
         print("fourier field found!")
       except AttributeError :
-        print("fourier field not detected!")
+        print("fourier field not found!")
         self.calc_ft()
 
-      ft_squared = np.abs(self.ft)**2
+      print("calculating the power spectrum...")
+      ps_3D = np.abs(self.ft)**2
       sum_power = np.sum(ft_squared)
 
       dims = np.array(self.H5file.params['dims'])
@@ -272,18 +282,22 @@ class H5file :
       # returns the index of k_bins which each k_3Darray fits inside
       bin_index = np.digitize(k_3Darray.flat, k_bins)
 
-      power_spectrum = np.zeros(len(k_bins))
-
-      for i in range(1,len(power_spectrum)) :
-          power_spectrum[i-1] = np.sum(ft_squared.flat[bin_index==i])
-          if i%10 == 0 :
-              print("power spectrum summed until k="+str(i))
-      print("completed!")
-
-      print("sum_powerspec    : {}".format(np.sum(power_spectrum)))
-
+      self.ps_3D = ps_3D
       self.k = k_bins
-      self.ps = power_spectrum
+      print("three-dimensional power spectrum saved!")
+
+      if calc_1D :
+        ps_1D = np.zeros(len(k_bins))
+
+        print("summing the power spectrum...")
+        for i in range(1,len(ps_1D)) :
+            ps_1D[i-1] = np.sum(ps_3D.flat[bin_index==i])
+            if i%20 == 0 :
+                print("power spectrum summed until k= {} out of {}".format(i, len(ps_1D)))
+        print("completed!")
+        print("sum_powerspec    : {}".format(np.sum(ps_1D)))
+
+        self.ps = ps_1D
 
   """
   ================================================================================
@@ -352,6 +366,8 @@ class H5file :
 
     def __init__(self, H5file, dataname, save_mem=False) :
       self.H5file = H5file
+      self.dataname = dataname
+      self.save_mem = save_mem
       if save_mem :
         self.datax = None
         self.datay = None
@@ -360,3 +376,77 @@ class H5file :
         self.datax = sort(H5file, H5file.h5f[dataname+'x'])
         self.datay = sort(H5file, H5file.h5f[dataname+'y'])
         self.dataz = sort(H5file, H5file.h5f[dataname+'z'])
+
+    def calc_ps(self, calc_1D=True) :
+
+      print("calculating the power spectrum...")
+      dims = np.array(self.H5file.params['dims'])
+      nx, ny, nz = dims
+
+      ps_3D = np.zeros(dims)
+      ms_field = 0.0
+      gc.collect()
+
+      list_comp = [self.datax, self.datay, self.dataz]
+      list_name = [self.dataname+s for s in ['x','y','z']]
+      for comp, comp_name in zip(list_comp, list_name) :
+
+        if comp is None :
+          print("loading the field...")
+          comp = sort(H5file, H5file.h5f[comp_name])
+          print("field loaded!")
+        else :
+          print("field found within the dataset!")
+
+        ms_field += np.average(comp**2)
+
+        print("performing fast fourier transform...")
+        FF = np.fft.fftshift(np.fft.fftn(comp)) / np.product(dims)
+
+        ps_3D += np.abs(FF)**2
+        print("completed!")
+
+        comp = None
+        gc.collect()
+
+      sum_power = np.sum(ps_3D)
+      print("sum_power        : {}".format(sum_power))
+      print("rms_squared_field: {}".format(ms_field))
+
+      L = np.array(self.H5file.params['L'])
+      # [-N, -(N-1), ..., -1, 0, 1, ..., N-2, N-1]
+      kx_list = ( np.arange(-nx//2,nx//2,1) )/L[0]
+      ky_list = ( np.arange(-ny//2,ny//2,1) )/L[1]
+      kz_list = ( np.arange(-nz//2,nz//2,1) )/L[2]
+
+      # tells the k of the corresponding element of 'power_field'
+      k_x, k_y, k_z = np.meshgrid(kx_list, ky_list, kz_list, indexing="ij")
+      k_3Darray = np.sqrt(k_x**2 + k_y**2 + k_z**2)
+
+      # physical limits to the wavenumbers
+      kmin = np.min(1.0/L)
+      kmax = np.min(0.5*dims/L)
+
+      # bins of wavenumbers
+      # first bin = (0.5 to 1.5), second bin = (1.5 to 2.5), ...
+      k_bins = np.arange(kmin, kmax, kmin) - 0.5*kmin
+
+      # returns the index of k_bins which each k_3Darray fits inside
+      bin_index = np.digitize(k_3Darray.flat, k_bins)
+
+      self.ps3D = ps_3D
+      self.k = k_bins
+      print("three-dimensional power spectrum saved!")
+
+      if calc_1D :
+        ps_1D = np.zeros(len(k_bins))
+
+        print("summing the power spectrum...")
+        for i in range(1,len(ps_1D)) :
+            ps_1D[i-1] = np.sum(ps_3D.flat[bin_index==i])
+            if i%20 == 0 :
+                print("power spectrum summed until k= {} out of {}".format(i, len(ps_1D)))
+        print("completed!")
+        print("sum_powerspec    : {}".format(np.sum(ps_1D)))
+
+        self.ps = ps_1D
