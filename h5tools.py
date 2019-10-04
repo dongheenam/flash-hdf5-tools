@@ -393,7 +393,7 @@ class H5file :
 
         if comp is None :
           print("loading the field...")
-          comp = sort(H5file, H5file.h5f[comp_name])
+          comp = sort(self.H5file, self.H5file.h5f[comp_name])
           print("field loaded!")
         else :
           print("field found within the dataset!")
