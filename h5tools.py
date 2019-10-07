@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 # DEPENDENCIES
 import gc                     # garbage collection
 
@@ -180,7 +182,7 @@ class H5file :
     self.block_sizes = read_array(self.h5f, 'block size')
     self.block_coords = read_array(self.h5f, 'coordinates')
 
-    print("{} read!".format(filename))
+    print("{} read!".format(path))
     print("simulation time: {}".format(self.params['time']))
     print("size           : {}".format(self.params['dims']))
     print("domain         : {}".format(self.params['L']))
@@ -240,7 +242,7 @@ class H5file :
       return np.mean(self.data)
 
     def save_to_hdf5(self, list_data_to_save, list_name, path_to_save=None) :
-        if path_to_save is None :
+        if path_to_save == None :
           path_to_save = "{}{}_{}.hdf5".format(
                       self.H5file.dir_to_file, self.H5file.filename, list_name[-1] )
 
@@ -252,7 +254,7 @@ class H5file :
         print("file saved!")
 
     def save_to_dat(self, list_data_to_save, list_name, path_to_save=None) :
-      if path_to_save is None :
+      if path_to_save == None :
         path_to_save = "{}{}_{}.dat".format(
                     self.H5file.dir_to_file, self.H5file.filename, list_name[-1] )
 
@@ -261,14 +263,26 @@ class H5file :
 
       col_length = len(list_name)
       row_length = len(list_data_to_save[-1])
-      file.write(("{:20s}"*col_length+'\n').format(*tuple(list_name)))
+      dat_out.write(("{:>20s}"*col_length+'\n').format(*tuple(list_name)))
 
       for i in range(row_length) :
         tuple_row = tuple( [data[i] for data in list_data_to_save] )
-        file.write(("{:20.11E}"*col_length+'\n').format(*tuple_row))
+        dat_out.write(("{:20.11E}"*col_length+'\n').format(*tuple_row))
 
-      file.close()
+      dat_out.close()
       print("file saved!")
+
+    def calc_proj(self, axis) :
+      if axis =='x' :
+        axis_no = 0
+      elif axis == 'y' :
+        axis_no = 1
+      elif axis == 'z' :
+        axis_no = 2
+      else :
+        print("axis input not set up properly!")
+
+      self.data = np.sum(self.data, axis=axis_no)
 
     def calc_ft(self, save=False, save_path=None) :
       print("performing fast fourier transform...")
@@ -281,7 +295,7 @@ class H5file :
       print("sum_power        : {}".format(sum_power))
       print("rms_squared_field: {}".format(rms_field**2))
 
-      if save is True :
+      if save == True :
         dataset_name = self.dataname + "ft"
         self.save_to_hdf5([self.ft], [dataset_name], path_to_save=save_path)
 
@@ -325,11 +339,11 @@ class H5file :
       self.k = k_bins
       print("three-dimensional power spectrum computed!")
 
-      if save_3D is True :
+      if save_3D == True :
         dataset_name = self.dataname + "3Dps"
         self.save_to_hdf5([self.k_3Darray,self.ps_3D], ['k',dataset_name], path_to_save=save_3D_path)
 
-      if calc_1D :
+      if calc_1D == True:
         ps_1D = np.zeros(len(k_bins))
 
         print("summing the power spectrum...")
@@ -342,7 +356,7 @@ class H5file :
 
         self.ps = ps_1D
 
-        if save_1D is True :
+        if save_1D == True :
           dataset_name = self.dataname + "ps"
           self.save_to_dat([self.k,self.ps], ['k',dataset_name], path_to_save=save_1D_path)
 
@@ -425,7 +439,7 @@ class H5file :
         self.dataz = sort(H5file, H5file.h5f[dataname+'z'])
 
     def save_to_hdf5(self, data_to_save, name, path_to_save=None) :
-        if path_to_save is None :
+        if path_to_save == None :
           path_to_save = "{}{}_{}.hdf5".format(
                       self.H5file.dir_to_file, self.H5file.filename, name )
 
@@ -436,7 +450,7 @@ class H5file :
         print("file saved!")
 
     def save_to_dat(self, list_data_to_save, list_name, path_to_save=None) :
-      if path_to_save is None :
+      if path_to_save == None :
         path_to_save = "{}{}_{}.dat".format(
                     self.H5file.dir_to_file, self.H5file.filename, list_name[-1] )
 
@@ -445,13 +459,13 @@ class H5file :
 
       col_length = len(list_name)
       row_length = len(list_data_to_save[-1])
-      file.write(("{:20s}"*col_length+'\n').format(*tuple(list_name)))
+      dat_out.write(("{:>20s}"*col_length+'\n').format(*tuple(list_name)))
 
       for i in range(row_length) :
         tuple_row = tuple( [data[i] for data in list_data_to_save] )
-        file.write(("{:20.11E}"*col_length+'\n').format(*tuple_row))
+        dat_out.write(("{:20.11E}"*col_length+'\n').format(*tuple_row))
 
-      file.close()
+      dat_out.close()
       print("file saved!")
 
     def calc_ps(self, calc_1D=True,
@@ -470,7 +484,7 @@ class H5file :
       for comp, comp_name in zip(list_comp, list_name) :
 
         # begin loop over components
-        if comp is None :
+        if comp == None :
           print("loading the field...")
           comp = sort(self.H5file, self.H5file.h5f[comp_name])
           print("field loaded!")
@@ -518,11 +532,11 @@ class H5file :
       self.k = k_bins
       print("three-dimensional power spectrum calculated!")
 
-      if save_3D is True :
+      if save_3D == True :
         dataset_name = self.dataname + "3Dps"
-        self.save_to_hdf5([self.k_3Darray,self.ps_3D], ['k',dataset_name], path_to_save=save_3D_path)"
+        self.save_to_hdf5([self.k_3Darray,self.ps_3D], ['k',dataset_name], path_to_save=save_3D_path)
 
-      if calc_1D :
+      if calc_1D == True :
         ps_1D = np.zeros(len(k_bins))
 
         print("summing the power spectrum...")
@@ -535,6 +549,60 @@ class H5file :
 
         self.ps = ps_1D
 
-        if save_1D is True :
+        if save_1D == True :
           dataset_name = self.dataname + "ps"
           self.save_to_dat([self.k,self.ps], ['k',dataset_name], path_to_save=save_1D_path)
+
+"""
+================================================================================
+Predefined macros
+================================================================================
+"""
+if __name__== "__main__":
+  # DEPENDENCIES
+  import argparse
+  import numpy as np
+
+  parser = argparse.ArgumentParser(description='predefined macros for common tasks.')
+  parser.add_argument('path', type=str,
+                      help='the path to the file to be loaded')
+  parser.add_argument('field', type=str,
+                      help='name the field that will be analysed')
+
+  parser.add_argument('--raw', action='store_true', default=False,
+                      help='Save the raw field as hdf5 file (scalar only)')
+  parser.add_argument('--proj', type=str, default=None, choices=['x','y','z'],
+                      help='Project the field to along an axis (scalar only)')
+  parser.add_argument('--ps1d', action='store_true', default=False,
+                      help='Set this flag to calculate the 1D power spectrum')
+  parser.add_argument('--ps3d', action='store_true', default=False,
+                      help='Set this flag to calculate the 3D power spectrum')
+
+  parser.add_argument('-o', type=str,
+                      help='the output path')
+
+  args = parser.parse_args()
+
+  # load the file and field
+  a = H5file(args.path)
+  ds = a.new_dataset(args.field, save_mem=True)
+
+  # print the raw field
+  if args.raw :
+    print("saving the field: {}...".format(ds.dataname))
+    try :
+      ds.data
+    except AttributeError :
+      sys.exit("set a scalar field for this operation!")
+
+    ds.save_to_hdf5([ds.data], [ds.dataname], path_to_save=args.o)
+
+  # project the field
+  if args.proj != None:
+    print("calculating the projection of {} along {}...".format(ds.dataname, args.proj))
+    ds.calc_proj(args.proj)
+    ds.save_to_hdf5([ds.data], [ds.dataname+'_proj'+args.proj], path_to_save=args.o)
+
+  # calculate the 1D power spectrum
+  if args.ps1d == True :
+    ds.calc_ps(calc_1D=True, save_1D=True, save_1D_path=args.o)
