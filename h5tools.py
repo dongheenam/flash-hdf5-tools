@@ -6,7 +6,7 @@ import gc                     # garbage collection
 import h5py                   # hdf5 handling
 import numpy as np
 
-import pytools                # my tools for python
+import dnam_tools                # my tools for python
 
 """
 FUNCTION dict = read_parameters(h5f, dataname)
@@ -159,7 +159,7 @@ class H5file :
     real_params = read_parameters(self.h5f, 'real runtime parameters')
     int_scalars = read_parameters(self.h5f, 'integer scalars')
     real_scalars = read_parameters(self.h5f, 'real scalars')
-    self.params = pytools.merge_dicts(int_params, real_params, int_scalars, real_scalars)
+    self.params = dnam_tools.merge_dicts(int_params, real_params, int_scalars, real_scalars)
 
     nxb = self.params['nxb']
     nyb = self.params['nyb']
