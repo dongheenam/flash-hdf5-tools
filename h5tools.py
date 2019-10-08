@@ -336,7 +336,7 @@ class H5file :
       bin_index = np.digitize(k_3Darray.flat, k_bins)
 
       self.ps_3D = ps_3D
-      self.k = k_bins
+      self.k = k_bins + 0.5*kmin
       print("three-dimensional power spectrum computed!")
 
       if save_3D == True :
@@ -529,7 +529,7 @@ class H5file :
       bin_index = np.digitize(k_3Darray.flat, k_bins)
 
       self.ps3D = ps_3D
-      self.k = k_bins
+      self.k = k_bins + 0.5*kmin
       print("three-dimensional power spectrum calculated!")
 
       if save_3D == True :
