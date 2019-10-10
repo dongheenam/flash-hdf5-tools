@@ -187,27 +187,27 @@ class H5file :
     print("size           : {}".format(self.params['dims']))
     print("domain         : {}".format(self.params['L']))
 
-  def new_dataset(self, dataname, save_mem=False) :
+  def new_dataset(self, dataname, small_mem=False) :
     if dataname == 'dens' :  # for density field              => create a density data set
       print("attempting to create a density dataset...")
-      return self.DensityDataset(self)
+      return self.DensityDataset(self, small_mem)
     else :
       try :         # see if the dataname exists              => create a scalar data set
         print("attempting to create a scalar dataset: {}...".format(dataname))
-        return self.ScalarDataset(self, dataname)
+        return self.ScalarDataset(self, dataname, small_mem)
       except :
         try :       # see if the dataname+"x","y","z" exists  => create a vector data set
           print("attempting to create a vector dataset: {}...".format(dataname))
-          return self.VectorDataset(self, dataname, save_mem)
+          return self.VectorDataset(self, dataname, small_mem)
         except :    # if the dataname does not exist within the hdf5 file => do nothing
           print("dataname not recognised")
 
   """
   ================================================================================
-  CLASS H5file.ScalarDataset(object)
+  CLASS H5file.Dataset(object)
 
   DESCRIPTION
-      container for a scalar field
+      container for a field
 
   INPUTS
       H5file
@@ -216,8 +216,8 @@ class H5file :
   VARIABLES
       Dataset.H5file
           the outer class
-      Dataset.data (np.array[N_x,N_y,N_z])
-          the raw field values
+      Dataset.dataname (string)
+          the key to access the field in the hdf5 field
 
       Dataset.ft (complex[k_x, k_y, k_z])     <== Dataset.calc_ft()
           the three-dimensional complex fourier field of .data
@@ -227,22 +227,27 @@ class H5file :
           the one-dimensional power spectrum of .data
 
   METHODS
-      mean = Dataset.mean()
-          returns the mean value of the data
+      Dataset.save_to_hdf5(list_data_to_save, list_name, path_to_save=None)
+          save the set of data to a hdf5 file (optional path and filename)
+      Dataset.save_to_dat(list_data_to_save, list_name, path_to_save=None)
+          save the set of data to a dat file (optional path and filename)
+          data is stored in rows with list_name as the header
+
+      Dataset.calc_ps(self, calc_1D=True,
+                  save_1D=False, save_1D_path=None, save_3D=False, save_3D_path=None)
+          calculate the 1D and/or 3D power spetrum
+          requires the fourier spectrum (self.ft) to exist
   ================================================================================
   """
-  class ScalarDataset(object) :
+  class Dataset(object) :
 
-    def __init__(self, H5file, dataname) :
+    def __init__(self, H5file, dataname, small_mem=False) :
       self.H5file = H5file
       self.dataname = dataname
-      self.data = sort(H5file, H5file.h5f[dataname])
-
-    def mean(self) :
-      return np.mean(self.data)
+      self.small_mem = small_mem
 
     def save_to_hdf5(self, list_data_to_save, list_name, path_to_save=None) :
-        if path_to_save == None :
+        if path_to_save is None :
           path_to_save = "{}{}_{}.hdf5".format(
                       self.H5file.dir_to_file, self.H5file.filename, list_name[-1] )
 
@@ -254,7 +259,7 @@ class H5file :
         print("file saved!")
 
     def save_to_dat(self, list_data_to_save, list_name, path_to_save=None) :
-      if path_to_save == None :
+      if path_to_save is None :
         path_to_save = "{}{}_{}.dat".format(
                     self.H5file.dir_to_file, self.H5file.filename, list_name[-1] )
 
@@ -272,6 +277,104 @@ class H5file :
       dat_out.close()
       print("file saved!")
 
+    def calc_ps(self, save=False, save_path=None) :
+      small_mem = self.small_mem
+      try :
+        self.ps_3D
+        print("3D power spectrum found!")
+      except AttributeError :
+        print("3D power spectrum not found!")
+        self.calc_ps_3D()
+
+      print("calculating the power spectrum...")
+      sum_power = np.sum(self.ps_3D)
+
+      # some physical properties
+      dims = np.array(self.H5file.params['dims'])
+      nx, ny, nz = dims
+      L = np.array(self.H5file.params['L'])
+
+      # calculate the wavenumber space
+      # [-N, -(N-1), ..., -1, 0, 1, ..., N-2, N-1]
+      kx_list = ( np.arange(-nx//2,nx//2,1) )/L[0]
+      ky_list = ( np.arange(-ny//2,ny//2,1) )/L[1]
+      kz_list = ( np.arange(-nz//2,nz//2,1) )/L[2]
+
+      # the wavenumber of the corresponding element of the 3D power spectrum
+      k_x, k_y, k_z = np.meshgrid(kx_list, ky_list, kz_list, indexing="ij")
+      k = np.sqrt(k_x**2 + k_y**2 + k_z**2)
+
+      # physical limits to the wavenumbers
+      kmin = np.min(1.0/L)
+      kmax = np.min(0.5*dims/L)
+      # bins of wavenumbers
+      # first bin = (0.5 to 1.5), second bin = (1.5 to 2.5), ...
+      k_bins = np.arange(kmin, kmax, kmin) - 0.5*kmin
+
+      # calculate the power spectrum
+      ps_1D = np.zeros(len(k_bins))
+
+      # sorting the power spectrum in the increasing order of wavenumber
+      sorting_ind = np.argsort(k.flat)
+      k_sorted = k.flat[sorting_ind]
+      if small_mem :
+        k = None
+      ps_sorted = self.ps_3D.flat[sorting_ind]
+      if small_mem :
+        self.ps_3D = None
+      sorting_ind = None
+      gc.collect()
+
+      # determine the location of the bins
+      loc_bins = np.searchsorted(k_sorted, k_bins, sorter=None)
+      # sum the power spectrum under the bins
+      ps_1D = [np.sum(ps_sorted[loc_bins[i]:loc_bins[i+1]]) for i in range(len(k_bins)-1)]
+
+      self.ps = ps_1D
+      self.k = k_bins/kmin + 0.5
+
+      if save == True :
+        dataset_name = self.dataname + "ps"
+        self.save_to_dat([self.k,self.ps], ['k',dataset_name], path_to_save=save_path)
+    # end def calc_ps
+  """
+  ================================================================================
+  CLASS H5file.ScalarDataset(Dataset)
+
+  DESCRIPTION
+      container for a scalar field
+
+  INPUTS
+      H5file
+          the outer class H5file
+
+  VARIABLES
+      Dataset.H5file
+          the outer class
+      Dataset.data (np.array[N_x,N_y,N_z])
+          the raw field values
+      Dataset.dataname (string)
+          the key to access the field in the hdf5 field
+
+      Dataset.ft (complex[k_x, k_y, k_z])     <== Dataset.calc_ft()
+          the three-dimensional complex fourier field of .data
+      Dataset.ps_3D (float[k_x, k_y, k_z])     <== Dataset.calc_ps()
+          the three-dimensional power spectrum of .data
+      Dataset.ps (np.array[k_max])            <== Dataset.calc_ps(calc_1D=True)
+          the one-dimensional power spectrum of .data
+
+  METHODS
+
+  ================================================================================
+  """
+  class ScalarDataset(Dataset) :
+
+    def __init__(self, H5file, dataname, small_mem=False) :
+      self.H5file = H5file
+      self.dataname = dataname
+      self.small_mem = small_mem
+      self.data = sort(H5file, H5file.h5f[dataname])
+
     def calc_proj(self, axis) :
       if axis =='x' :
         axis_no = 0
@@ -284,81 +387,25 @@ class H5file :
 
       self.data = np.sum(self.data, axis=axis_no)
 
-    def calc_ft(self, save=False, save_path=None) :
+    def calc_ps_3D(self, save=False, save_path=None) :
+      small_mem=self.small_mem
+
       print("performing fast fourier transform...")
       rms_field = np.sqrt(np.average(self.data**2))
 
       self.ft = np.fft.fftshift(np.fft.fftn(self.data)) / np.product(self.H5file.params['dims'])
       print("... fft completed!")
 
-      sum_power = np.sum(np.abs(self.ft)**2)
+      if small_mem==True : self.data = None
+
+      self.ps_3D = np.abs(self.ft)**2
+      sum_power = np.sum(self.ps_3D)
       print("sum_power        : {}".format(sum_power))
       print("rms_squared_field: {}".format(rms_field**2))
 
       if save == True :
-        dataset_name = self.dataname + "ft"
-        self.save_to_hdf5([self.ft], [dataset_name], path_to_save=save_path)
-
-    def calc_ps(self, calc_1D=True,
-                save_1D=False, save_1D_path=None, save_3D=False, save_3D_path=None) :
-      try :
-        self.ft
-        print("fourier field found!")
-      except AttributeError :
-        print("fourier field not found!")
-        self.calc_ft()
-
-      print("calculating the power spectrum...")
-      ps_3D = np.abs(self.ft)**2
-      sum_power = np.sum(ft_squared)
-
-      dims = np.array(self.H5file.params['dims'])
-      nx, ny, nz = dims
-      L = np.array(self.H5file.params['L'])
-      # [-N, -(N-1), ..., -1, 0, 1, ..., N-2, N-1]
-      kx_list = ( np.arange(-nx//2,nx//2,1) )/L[0]
-      ky_list = ( np.arange(-ny//2,ny//2,1) )/L[1]
-      kz_list = ( np.arange(-nz//2,nz//2,1) )/L[2]
-
-      # tells the k of the corresponding element of 'power_field'
-      k_x, k_y, k_z = np.meshgrid(kx_list, ky_list, kz_list, indexing="ij")
-      k_3Darray = np.sqrt(k_x**2 + k_y**2 + k_z**2)
-
-      # physical limits to the wavenumbers
-      kmin = np.min(1.0/L)
-      kmax = np.min(0.5*dims/L)
-
-      # bins of wavenumbers
-      # first bin = (0.5 to 1.5), second bin = (1.5 to 2.5), ...
-      k_bins = np.arange(kmin, kmax, kmin) - 0.5*kmin
-
-      # returns the index of k_bins which each k_3Darray fits inside
-      bin_index = np.digitize(k_3Darray.flat, k_bins)
-
-      self.ps_3D = ps_3D
-      self.k = k_bins + 0.5*kmin
-      print("three-dimensional power spectrum computed!")
-
-      if save_3D == True :
-        dataset_name = self.dataname + "3Dps"
-        self.save_to_hdf5([self.k_3Darray,self.ps_3D], ['k',dataset_name], path_to_save=save_3D_path)
-
-      if calc_1D == True:
-        ps_1D = np.zeros(len(k_bins))
-
-        print("summing the power spectrum...")
-        for i in range(1,len(ps_1D)) :
-            ps_1D[i-1] = np.sum(ps_3D.flat[bin_index==i])
-            if i%20 == 0 :
-                print("power spectrum summed until k= {} out of {}".format(i, len(ps_1D)))
-        print("completed!")
-        print("sum_powerspec    : {}".format(np.sum(ps_1D)))
-
-        self.ps = ps_1D
-
-        if save_1D == True :
-          dataset_name = self.dataname + "ps"
-          self.save_to_dat([self.k,self.ps], ['k',dataset_name], path_to_save=save_1D_path)
+        dataset_name = self.dataname + "ps3d"
+        self.save_to_hdf5([self.ps_3D], [dataset_name], path_to_save=save_path)
 
   """
   ================================================================================
@@ -383,8 +430,8 @@ class H5file :
   """
   class DensityDataset(ScalarDataset) :
 
-    def __init__(self, H5file) :
-      super(H5file.DensityDataset,self).__init__(H5file, 'dens')
+    def __init__(self, H5file, small_mem=True) :
+      super(H5file.DensityDataset,self).__init__(H5file, 'dens', small_mem=small_mem)
 
     def set_log(self) :
       self.data = np.log(self.data/self.mean())
@@ -395,7 +442,7 @@ class H5file :
 
   """
   ================================================================================
-  CLASS H5file.VectorDataset(H5file, dataname)
+  CLASS H5file.VectorDataset(Dataset)
 
   DESCRIPTION
       container for a vector field of data
@@ -423,13 +470,13 @@ class H5file :
           the raw values of the z-component of the field
   ================================================================================
   """
-  class VectorDataset(object) :
+  class VectorDataset(Dataset) :
 
-    def __init__(self, H5file, dataname, save_mem=False) :
+    def __init__(self, H5file, dataname, small_mem=False) :
       self.H5file = H5file
       self.dataname = dataname
-      self.save_mem = save_mem
-      if save_mem :
+      self.small_mem = small_mem
+      if small_mem :
         self.datax = None
         self.datay = None
         self.dataz = None
@@ -438,40 +485,7 @@ class H5file :
         self.datay = sort(H5file, H5file.h5f[dataname+'y'])
         self.dataz = sort(H5file, H5file.h5f[dataname+'z'])
 
-    def save_to_hdf5(self, data_to_save, name, path_to_save=None) :
-        if path_to_save == None :
-          path_to_save = "{}{}_{}.hdf5".format(
-                      self.H5file.dir_to_file, self.H5file.filename, name )
-
-        print("{} saving to: {}...".format( name, path_to_save ))
-        h5_out = h5py.File(path_to_save,'w')
-        h5_out.create_dataset(name, data=data_to_save)
-        h5_out.close()
-        print("file saved!")
-
-    def save_to_dat(self, list_data_to_save, list_name, path_to_save=None) :
-      if path_to_save == None :
-        path_to_save = "{}{}_{}.dat".format(
-                    self.H5file.dir_to_file, self.H5file.filename, list_name[-1] )
-
-      dat_out = open(path_to_save, mode='w')
-      print("{} saving to: {}...".format( list_name[-1], path_to_save ))
-
-      col_length = len(list_name)
-      row_length = len(list_data_to_save[-1])
-      dat_out.write(("{:>20s}"*col_length+'\n').format(*tuple(list_name)))
-
-      for i in range(row_length) :
-        tuple_row = tuple( [data[i] for data in list_data_to_save] )
-        dat_out.write(("{:20.11E}"*col_length+'\n').format(*tuple_row))
-
-      dat_out.close()
-      print("file saved!")
-
-    def calc_ps(self, calc_1D=True,
-                save_1D=False, save_1D_path=None, save_3D=False, save_3D_path=None) :
-
-      print("calculating the power spectrum...")
+    def calc_ps_3D(self, save=False, save_path=None) :
       dims = np.array(self.H5file.params['dims'])
       nx, ny, nz = dims
 
@@ -479,12 +493,11 @@ class H5file :
       ms_field = 0.0
       gc.collect()
 
-      list_comp = [self.datax, self.datay, self.dataz]
-      list_name = [self.dataname+s for s in ['x','y','z']]
+      list_comp = [self.datax, self.datay, self.dataz]      # the vector components
+      list_name = [self.dataname+s for s in ['x','y','z']]  # the name of the components
       for comp, comp_name in zip(list_comp, list_name) :
-
-        # begin loop over components
-        if comp == None :
+      # begin loop over components
+        if comp is None :
           print("loading the field...")
           comp = sort(self.H5file, self.H5file.h5f[comp_name])
           print("field loaded!")
@@ -501,57 +514,14 @@ class H5file :
 
         comp = None
         gc.collect()
-        # begin loop over components
+      # end loop over components
 
-      sum_power = np.sum(ps_3D)
-      print("sum_power        : {}".format(sum_power))
-      print("rms_squared_field: {}".format(ms_field))
+      self.ps_3D = ps_3D
 
-      L = np.array(self.H5file.params['L'])
-      # [-N, -(N-1), ..., -1, 0, 1, ..., N-2, N-1]
-      kx_list = ( np.arange(-nx//2,nx//2,1) )/L[0]
-      ky_list = ( np.arange(-ny//2,ny//2,1) )/L[1]
-      kz_list = ( np.arange(-nz//2,nz//2,1) )/L[2]
-
-      # tells the k of the corresponding element of 'power_field'
-      k_x, k_y, k_z = np.meshgrid(kx_list, ky_list, kz_list, indexing="ij")
-      k_3Darray = np.sqrt(k_x**2 + k_y**2 + k_z**2)
-
-      # physical limits to the wavenumbers
-      kmin = np.min(1.0/L)
-      kmax = np.min(0.5*dims/L)
-
-      # bins of wavenumbers
-      # first bin = (0.5 to 1.5), second bin = (1.5 to 2.5), ...
-      k_bins = np.arange(kmin, kmax, kmin) - 0.5*kmin
-
-      # returns the index of k_bins which each k_3Darray fits inside
-      bin_index = np.digitize(k_3Darray.flat, k_bins)
-
-      self.ps3D = ps_3D
-      self.k = k_bins + 0.5*kmin
-      print("three-dimensional power spectrum calculated!")
-
-      if save_3D == True :
-        dataset_name = self.dataname + "3Dps"
-        self.save_to_hdf5([self.k_3Darray,self.ps_3D], ['k',dataset_name], path_to_save=save_3D_path)
-
-      if calc_1D == True :
-        ps_1D = np.zeros(len(k_bins))
-
-        print("summing the power spectrum...")
-        for i in range(1,len(ps_1D)) :
-            ps_1D[i-1] = np.sum(ps_3D.flat[bin_index==i])
-            if i%20 == 0 :
-                print("power spectrum summed until k= {} out of {}".format(i, len(ps_1D)))
-        print("completed!")
-        print("sum_powerspec    : {}".format(np.sum(ps_1D)))
-
-        self.ps = ps_1D
-
-        if save_1D == True :
-          dataset_name = self.dataname + "ps"
-          self.save_to_dat([self.k,self.ps], ['k',dataset_name], path_to_save=save_1D_path)
+      if save == True :
+        dataset_name = self.dataname + "3dps"
+        self.save_to_hdf5([self.ps_3D], [dataset_name], path_to_save=save_path)
+    # end def calc_ps_3D
 
 """
 ================================================================================
@@ -583,9 +553,9 @@ if __name__== "__main__":
 
   args = parser.parse_args()
 
-  # load the file and field
+  # load the file and create a dataset
   a = H5file(args.path)
-  ds = a.new_dataset(args.field, save_mem=True)
+  ds = a.new_dataset(args.field, small_mem=True)
 
   # print the raw field
   if args.raw :
@@ -598,11 +568,11 @@ if __name__== "__main__":
     ds.save_to_hdf5([ds.data], [ds.dataname], path_to_save=args.o)
 
   # project the field
-  if args.proj != None:
+  if args.proj is not None:
     print("calculating the projection of {} along {}...".format(ds.dataname, args.proj))
     ds.calc_proj(args.proj)
     ds.save_to_hdf5([ds.data], [ds.dataname+'_proj'+args.proj], path_to_save=args.o)
 
   # calculate the 1D power spectrum
   if args.ps1d == True :
-    ds.calc_ps(calc_1D=True, save_1D=True, save_1D_path=args.o)
+    ds.calc_ps(save=True, save_path=args.o)
