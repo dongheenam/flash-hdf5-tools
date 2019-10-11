@@ -331,7 +331,7 @@ class H5file :
       ps_1D = [np.sum(ps_sorted[loc_bins[i]:loc_bins[i+1]]) for i in range(len(k_bins)-1)]
 
       self.ps = ps_1D
-      self.k = k_bins/kmin + 0.5
+      self.k = k_bins[:-1]/kmin + 0.5
 
       if save == True :
         dataset_name = self.dataname + "ps"
