@@ -2,9 +2,11 @@
 
 # DEPENDENCIES
 import gc                     # garbage collection
-
+from datetime import datetime # time measurement
 import h5py                   # hdf5 handling
 import numpy as np
+
+import pyfftw                 # python wrapper for FFTW
 
 import dnam_tools                # my tools for python
 
@@ -278,6 +280,8 @@ class H5file :
       print("file saved!")
 
     def calc_ps(self, save=False, save_path=None) :
+      t_start = datetime.now()
+
       small_mem = self.small_mem
       try :
         self.ps_3D
@@ -333,8 +337,14 @@ class H5file :
       self.ps = ps_1D
       self.k = k_bins[:-1]/kmin + 0.5
 
+      t_end = datetime.now()
+      delta = t_end - t_start
+      print("completed!")
+      print("time taken: {}".format(delta.total_seconds()))
+
       if save == True :
         dataset_name = self.dataname + "ps"
+        print("saving power spectrum to {}...".format(dataset_name))
         self.save_to_dat([self.k,self.ps], ['k',dataset_name], path_to_save=save_path)
     # end def calc_ps
   """
@@ -388,12 +398,15 @@ class H5file :
       self.data = np.sum(self.data, axis=axis_no)
 
     def calc_ps_3D(self, save=False, save_path=None) :
+      t_start = datetime.now()
       small_mem=self.small_mem
 
       print("performing fast fourier transform...")
       rms_field = np.sqrt(np.average(self.data**2))
 
-      self.ft = np.fft.fftshift(np.fft.fftn(self.data)) / np.product(self.H5file.params['dims'])
+      fft_object = pyfftw.builders.fftn(self.data)
+      self.ft = np.fft.fftshift(fft_object()) / np.product(self.H5file.params['dims'])
+
       print("... fft completed!")
 
       if small_mem==True : self.data = None
@@ -402,6 +415,10 @@ class H5file :
       sum_power = np.sum(self.ps_3D)
       print("sum_power        : {}".format(sum_power))
       print("rms_squared_field: {}".format(rms_field**2))
+
+      t_end = datetime.now()
+      delta = t_end - t_start
+      print("time taken: {}".format(delta.total_seconds()))
 
       if save == True :
         dataset_name = self.dataname + "ps3d"
@@ -486,6 +503,8 @@ class H5file :
         self.dataz = sort(H5file, H5file.h5f[dataname+'z'])
 
     def calc_ps_3D(self, save=False, save_path=None) :
+      t_start = datetime.now()
+
       dims = np.array(self.H5file.params['dims'])
       nx, ny, nz = dims
 
@@ -507,6 +526,7 @@ class H5file :
         ms_field += np.average(comp**2)
 
         print("performing fast fourier transform...")
+
         FF = np.fft.fftshift(np.fft.fftn(comp)) / np.product(dims)
 
         ps_3D += np.abs(FF)**2
@@ -517,6 +537,10 @@ class H5file :
       # end loop over components
 
       self.ps_3D = ps_3D
+
+      t_end = datetime.now()
+      delta = t_end - t_start
+      print("time taken: {}".format(delta.total_seconds()))
 
       if save == True :
         dataset_name = self.dataname + "3dps"
