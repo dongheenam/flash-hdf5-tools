@@ -96,8 +96,8 @@ def plot_proj(ax, proj,
     plt.colorbar(im, cax=cax)
     if colorbar_title is not None :
       cax.set_ylabel(colorbar_title, rotation=90)
-      plt.tight_layout()
-
+  
+  plt.tight_layout()
   return im
 # end def plot_proj()
 
@@ -167,8 +167,7 @@ if __name__ == "__main__" :
         save_path = path[:-2] + args.ext
     else :
       save_path = args.o
-
-    fig.tight_layout()
+    
     fig.savefig(save_path)
     print("plot saved to: {}".format(save_path))
   # endif args.proj_mpi
