@@ -10,25 +10,23 @@ import pyfftw                 # python wrapper for FFTW
 
 import dnam_tools                # my tools for python
 
-"""
-FUNCTION dict = read_parameters(h5f, dataname)
-
-DESCRIPTION
-    return the specified parameter group as a dictionary from the FLASH hdf5 file
-
-INPUTS
-    h5f (h5py.File)
-        the h5py File object containing the hdf5 file
-    dataname (string)
-        the keyword for the parameter group
-          e.g.: ['integer runtime parameters', 'real runtime parameters',
-                 'integer scalars', 'real scalars']
-
-OUTPUTS
-    dict (dictionary)
-        contains the parameters, which can be accessed with their names e.g. dict['nxb']
-"""
 def read_parameters(h5f, dataname) :
+  """
+  DESCRIPTION
+      return the specified parameter group as a dictionary from the FLASH hdf5 file
+
+  INPUTS
+      h5f (h5py.File)
+          the h5py File object containing the hdf5 file
+      dataname (string)
+          the keyword for the parameter group
+            e.g.: ['integer runtime parameters', 'real runtime parameters',
+                   'integer scalars', 'real scalars']
+
+  OUTPUTS
+      dict (dictionary)
+          contains the parameters, which can be accessed with their names e.g. dict['nxb']
+  """
 
   # parameters
   params = dict(h5f[dataname])
@@ -40,54 +38,49 @@ def read_parameters(h5f, dataname) :
 
   return params
 
-"""
-FUNCTION array = read_array(h5f, dataname)
-
-DESCRIPTION
-    return the specified array that does not need to be sorted
-    as a NumPy from the FLASH hdf5 file
-
-INPUTS
-    h5f (h5py.File)
-        the h5py File object containing the hdf5 file
-    dataname (string)
-        the keyword for the array
-            e.g. ['block size', 'coordinates']
-
-OUTPUTS
-    array (float[: , ... , :])
-        the NumPy array containing the data
-"""
 def read_array(h5f, dataname):
+  """
+  DESCRIPTION
+      return the specified array that does not need to be sorted
+      as a NumPy from the FLASH hdf5 file
+
+  INPUTS
+      h5f (h5py.File)
+          the h5py File object containing the hdf5 file
+      dataname (string)
+          the keyword for the array
+              e.g. ['block size', 'coordinates']
+
+  OUTPUTS
+      array (float[: , ... , :])
+          the NumPy array containing the data
+  """
 
   # the parameters
   array = np.array(h5f[dataname])
 
   return array
 
-"""
-FUNCTION data_sorted = sort(H5file, data)
-
-DESCRIPTION
-    by default the FLASH file prints the field in [nProcs, nzb, nyb, nxb]
-    this method is returns the field in [N_x, N_y, N_z] dimensions
-    using the parameters stored in the H5file instance
-
-INPUTS
-    H5file
-        the H5file instance
-    data (float[nProcs, nzb, nyb, nxb])
-        the raw data from the FLASH hdf5 file
-
-OUTPUTS
-    data_sorted (float[N_x, N_y, N_z])
-        the 3D NumPy array containing the sorted data
-"""
 def sort(H5file, data) :
+  """
+  DESCRIPTION
+      by default the FLASH file prints the field in [nProcs, nzb, nyb, nxb]
+      this method is returns the field in [N_x, N_y, N_z] dimensions
+      using the parameters stored in the H5file instance
+
+  INPUTS
+      H5file
+          the H5file instance
+      data (float[nProcs, nzb, nyb, nxb])
+          the raw data from the FLASH hdf5 file
+
+  OUTPUTS
+      data_sorted (float[N_x, N_y, N_z])
+          the 3D NumPy array containing the sorted data
+  """
 
   # some parameters required for the sorting
   # they are read from the parent class (H5file)
-
   dims = np.array( H5file.params['dims'] )
   L_bl = np.array( H5file.params['Lmin'] )
   L_tr = np.array( H5file.params['Lmax'] )
@@ -124,37 +117,40 @@ def sort(H5file, data) :
   # update the sorted data
   return data_sorted
 
-"""
-================================================================================
-CLASS H5file(filename)
-
-DESCRIPTION
-    container for a FLASH hdf5 file and its parameters
-
-INPUTS
-    path (string)
-        the full path to the hdf5 file
-
-VARIABLES
-    H5file.dir_to_file (string)
-        the directory where the file is located
-    H5file.filename (string)
-        the name of the hdf5 file
-    H5file.h5f (h5py.File)
-        the h5py File object
-    H5file.params (dictionary)
-        the integer/real parameters/scalars from the file
-
-METHODS
-    H5file.new_dataset(dataname)
-        returns a scalar or vector dataset instance, depending on the data name
-================================================================================
-"""
 class H5file :
+  """
+  ================================================================================
+  DESCRIPTION
+      container for a FLASH hdf5 file and its parameters
+
+  INPUTS
+      path (string)
+          the full path to the hdf5 file
+
+  VARIABLES
+      H5file.dir_to_file (string)
+          the directory where the file is located
+      H5file.filename (string)
+          the name of the hdf5 file
+      H5file.h5f (h5py.File)
+          the h5py File object
+      H5file.params (dictionary)
+          the integer/real parameters/scalars from the file
+
+  METHODS
+      H5file.new_dataset(dataname)
+          returns a scalar or vector dataset instance, depending on the data name
+  ================================================================================
+  """
 
   def __init__(self, path) :
-    self.dir_to_file = path[path.rfind('/')+1 : ]
-    self.filename = path[ : path.rfind('/')+1]
+    slash_loc = path.rfind('/')
+    if slash_loc = -1 :
+      self.dir_to_file = ''
+      self.filename = path
+    else :
+      self.dir_to_file = path[slash_loc+1 : ]
+      self.filename =    path[ : slash_loc+1]
     self.h5f = h5py.File(path, 'r')
 
     int_params = read_parameters(self.h5f, 'integer runtime parameters')
@@ -204,44 +200,42 @@ class H5file :
         except :    # if the dataname does not exist within the hdf5 file => do nothing
           print("dataname not recognised")
 
-  """
-  ================================================================================
-  CLASS H5file.Dataset(object)
-
-  DESCRIPTION
-      container for a field
-
-  INPUTS
-      H5file
-          the outer class H5file
-
-  VARIABLES
-      Dataset.H5file
-          the outer class
-      Dataset.dataname (string)
-          the key to access the field in the hdf5 field
-
-      Dataset.ft (complex[k_x, k_y, k_z])     <== Dataset.calc_ft()
-          the three-dimensional complex fourier field of .data
-      Dataset.ps_3D (float[k_x, k_y, k_z])     <== Dataset.calc_ps()
-          the three-dimensional power spectrum of .data
-      Dataset.ps (np.array[k_max])            <== Dataset.calc_ps(calc_1D=True)
-          the one-dimensional power spectrum of .data
-
-  METHODS
-      Dataset.save_to_hdf5(list_data_to_save, list_name, path_to_save=None)
-          save the set of data to a hdf5 file (optional path and filename)
-      Dataset.save_to_dat(list_data_to_save, list_name, path_to_save=None)
-          save the set of data to a dat file (optional path and filename)
-          data is stored in rows with list_name as the header
-
-      Dataset.calc_ps(self, calc_1D=True,
-                  save_1D=False, save_1D_path=None, save_3D=False, save_3D_path=None)
-          calculate the 1D and/or 3D power spetrum
-          requires the fourier spectrum (self.ft) to exist
-  ================================================================================
-  """
   class Dataset(object) :
+    """
+    ================================================================================
+    DESCRIPTION
+        container for a field
+
+    INPUTS
+        H5file
+            the outer class H5file
+
+    VARIABLES
+        Dataset.H5file
+            the outer class
+        Dataset.dataname (string)
+            the key to access the field in the hdf5 field
+
+        Dataset.ft (complex[k_x, k_y, k_z])     <== Dataset.calc_ft()
+            the three-dimensional complex fourier field of .data
+        Dataset.ps_3D (float[k_x, k_y, k_z])     <== Dataset.calc_ps()
+            the three-dimensional power spectrum of .data
+        Dataset.ps (np.array[k_max])            <== Dataset.calc_ps(calc_1D=True)
+            the one-dimensional power spectrum of .data
+
+    METHODS
+        Dataset.save_to_hdf5(list_data_to_save, list_name, path_to_save=None)
+            save the set of data to a hdf5 file (optional path and filename)
+        Dataset.save_to_dat(list_data_to_save, list_name, path_to_save=None)
+            save the set of data to a dat file (optional path and filename)
+            data is stored in rows with list_name as the header
+
+        Dataset.calc_ps(self, calc_1D=True,
+                    save_1D=False, save_1D_path=None, save_3D=False, save_3D_path=None)
+            calculate the 1D and/or 3D power spetrum
+            requires the fourier spectrum (self.ft) to exist
+    ================================================================================
+    """
 
     def __init__(self, H5file, dataname, small_mem=False) :
       self.H5file = H5file
@@ -347,37 +341,36 @@ class H5file :
         print("saving power spectrum to {}...".format(dataset_name))
         self.save_to_dat([self.k,self.ps], ['k',dataset_name], path_to_save=save_path)
     # end def calc_ps
-  """
-  ================================================================================
-  CLASS H5file.ScalarDataset(Dataset)
 
-  DESCRIPTION
-      container for a scalar field
-
-  INPUTS
-      H5file
-          the outer class H5file
-
-  VARIABLES
-      Dataset.H5file
-          the outer class
-      Dataset.data (np.array[N_x,N_y,N_z])
-          the raw field values
-      Dataset.dataname (string)
-          the key to access the field in the hdf5 field
-
-      Dataset.ft (complex[k_x, k_y, k_z])     <== Dataset.calc_ft()
-          the three-dimensional complex fourier field of .data
-      Dataset.ps_3D (float[k_x, k_y, k_z])     <== Dataset.calc_ps()
-          the three-dimensional power spectrum of .data
-      Dataset.ps (np.array[k_max])            <== Dataset.calc_ps(calc_1D=True)
-          the one-dimensional power spectrum of .data
-
-  METHODS
-
-  ================================================================================
-  """
   class ScalarDataset(Dataset) :
+    """
+    ================================================================================
+    DESCRIPTION
+        container for a scalar field
+
+    INPUTS
+        H5file
+            the outer class H5file
+
+    VARIABLES
+        Dataset.H5file
+            the outer class
+        Dataset.data (np.array[N_x,N_y,N_z])
+            the raw field values
+        Dataset.dataname (string)
+            the key to access the field in the hdf5 field
+
+        Dataset.ft (complex[k_x, k_y, k_z])     <== Dataset.calc_ft()
+            the three-dimensional complex fourier field of .data
+        Dataset.ps_3D (float[k_x, k_y, k_z])     <== Dataset.calc_ps()
+            the three-dimensional power spectrum of .data
+        Dataset.ps (np.array[k_max])            <== Dataset.calc_ps(calc_1D=True)
+            the one-dimensional power spectrum of .data
+
+    METHODS
+
+    ================================================================================
+    """
 
     def __init__(self, H5file, dataname, small_mem=False) :
       self.H5file = H5file
@@ -424,28 +417,26 @@ class H5file :
         dataset_name = self.dataname + "ps3d"
         self.save_to_hdf5([self.ps_3D], [dataset_name], path_to_save=save_path)
 
-  """
-  ================================================================================
-  CLASS H5file.DensityDataset(H5file.ScalarDataset)
-
-  DESCRIPTION
-      container for the density field
-
-  INPUTS
-      H5file
-          the outer class H5file
-
-  VARIABLES
-      Dataset.H5file
-          the outer class
-      Dataset.data (np.array[N_x,N_y,N_z])
-          the raw field values
-
-  METHODS
-
-  ================================================================================
-  """
   class DensityDataset(ScalarDataset) :
+    """
+    ================================================================================
+    DESCRIPTION
+        container for the density field
+
+    INPUTS
+        H5file
+            the outer class H5file
+
+    VARIABLES
+        Dataset.H5file
+            the outer class
+        Dataset.data (np.array[N_x,N_y,N_z])
+            the raw field values
+
+    METHODS
+
+    ================================================================================
+    """
 
     def __init__(self, H5file, small_mem=True) :
       super(H5file.DensityDataset,self).__init__(H5file, 'dens', small_mem=small_mem)
@@ -457,37 +448,35 @@ class H5file :
       self.set_log()
       self.data = self.data - self.mean()
 
-  """
-  ================================================================================
-  CLASS H5file.VectorDataset(Dataset)
-
-  DESCRIPTION
-      container for a vector field of data
-
-  INPUTS
-      H5file
-          the outer class H5file
-      dataname (string)
-          the keyword of the dataset within the file without x,y,z suffixes
-              e.g. ['vel', 'mag']
-
-      save_mem = False
-          if working on large data, it is often impossible
-          to work with all three field components
-          set True when you do not want to load all field components at once
-
-  VARIABLES
-      Dataset.H5file
-          the outer class
-      Dataset.datax (np.array[N_x,N_y,N_z])
-          the raw values of the x-component of the field
-      Dataset.datay (np.array[N_x,N_y,N_z])
-          the raw values of the y-component of the field
-      Dataset.dataz (np.array[N_x,N_y,N_z])
-          the raw values of the z-component of the field
-  ================================================================================
-  """
   class VectorDataset(Dataset) :
+    """
+    ================================================================================
+    DESCRIPTION
+        container for a vector field of data
+
+    INPUTS
+        H5file
+            the outer class H5file
+        dataname (string)
+            the keyword of the dataset within the file without x,y,z suffixes
+                e.g. ['vel', 'mag']
+
+        save_mem = False
+            if working on large data, it is often impossible
+            to work with all three field components
+            set True when you do not want to load all field components at once
+
+    VARIABLES
+        Dataset.H5file
+            the outer class
+        Dataset.datax (np.array[N_x,N_y,N_z])
+            the raw values of the x-component of the field
+        Dataset.datay (np.array[N_x,N_y,N_z])
+            the raw values of the y-component of the field
+        Dataset.dataz (np.array[N_x,N_y,N_z])
+            the raw values of the z-component of the field
+    ================================================================================
+    """
 
     def __init__(self, H5file, dataname, small_mem=False) :
       self.H5file = H5file
@@ -527,7 +516,7 @@ class H5file :
 
         print("performing fast fourier transform...")
 
-        FF = np.fft.fftshift(np.fft.fftn(comp)) / np.product(dims)
+        FF = np.fft.fftshift(pyfftw.interfaces.numpy_fft.fftn(comp)) / np.product(dims)
 
         ps_3D += np.abs(FF)**2
         print("completed!")
@@ -547,12 +536,12 @@ class H5file :
         self.save_to_hdf5([self.ps_3D], [dataset_name], path_to_save=save_path)
     # end def calc_ps_3D
 
-"""
-================================================================================
-Predefined macros
-================================================================================
-"""
 if __name__== "__main__":
+  """
+  ================================================================================
+  Predefined macros
+  ================================================================================
+  """
   # DEPENDENCIES
   import argparse
   import numpy as np
