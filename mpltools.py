@@ -14,10 +14,50 @@ from mpl_toolkits.axes_grid1.axes_divider import make_axes_locatable
 # OTHER DEPENDENCIES
 import numpy as np
 
-def plot_proj(ax, proj,
+"""
+================================================================================
+PLOTTER FUNCTIONS
+================================================================================
+"""
+def plot_1D(ax, x, y,
+            xrange=None, yrange=None, xlabel=None, ylabel=None,
+            title=None, plot_label=None,
+            log=(False, False), **plot_kwargs) :
+  """
+  DESCRIPTION
+      Plots a single line plot atop the specified axis
+
+  INPUTS
+      ax (matplotlib.axes)
+          the axis the projection will be plotted on
+      x (array_like[N])
+          the x-coordinates
+      y (array_like[N])
+          the y-coordinates
+
+      xrange, yrange (array_like[2])
+          [min, max] of the axes
+      xlabel, ylabel (str)
+          axes labels (to be passed on to ax.set_xlabel and ax.set_ylabel)
+      title (str)
+          plot title
+      annotation (str)
+          extra text to be displayed as AnchorText
+
+      imshow_kwargs (keyword arguments)
+          keyward arguments to be passed to matplotlib.axes.imshow
+
+  OUTPUTS
+      im (matplotlib.image.AxesImage)
+          returns the mappable image (to be used for colorbar outside the axes)
+  """
+  # plot the data
+  ax.plot(x, y, )
+
+def plot_proj(ax, proj, overplot=False,
               xrange=None, yrange=None, xlabel=None, ylabel=None,
-              title=None, annotation=None, colorbar_title=None,
-              colorbar=False, log=False, plot_range=[None,None], **imshow_kwargs) :
+              title=None, colorbar=False, colorbar_title=None,
+              log=False, color_range=[None,None], **imshow_kwargs) :
   """
   DESCRIPTION
       Plots a projection plot atop the specified axis
@@ -28,14 +68,14 @@ def plot_proj(ax, proj,
       proj (array_like[N_x, N_y])
           the two-dimensional projection data
 
+      overplot (boolean)
+          set this to True not to reinitialise the axes ranges and ticks
       xrange, yrange (array_like[2])
-          [min, max] for the ticks
+          [min, max] of the axes
       xlabel, ylabel (str)
           axes labels (to be passed on to ax.set_xlabel and ax.set_ylabel)
       title (str)
           plot title
-      annotation (str)
-          extra text to be displayed
       colorbar (boolean)
           if True adds a colorbar inside the axes
           (alternatively add it to the Figure directly)
@@ -43,8 +83,11 @@ def plot_proj(ax, proj,
           title of the colorbar
       log (boolean)
           set logarithmic colormap
-      plot_range (array_like[2])
-          minimum and maximum values to be plotted
+      color_range (array_like[2])
+          minimum and maximum values to be plotted for imshow
+
+      imshow_kwargs (keyword arguments)
+          keyward arguments to be passed to matplotlib.axes.imshow
 
   OUTPUTS
       im (matplotlib.image.AxesImage)
@@ -61,33 +104,31 @@ def plot_proj(ax, proj,
                  vmin=plot_range[0], vmax=plot_range[1],
                  **imshow_kwargs)
 
-  # set the ticks
-  ny, nx = proj.shape
-  ax.set_xticks(np.linspace(-0.5, nx+0.5, 5))
-  ax.set_yticks(np.linspace(-0.5, ny+0.5, 5))
+  if not overplot :
+    # set the ticks
+    ny, nx = proj.shape
+    ax.set_xticks(np.linspace(-0.5, nx+0.5, 5))
+    ax.set_yticks(np.linspace(-0.5, ny+0.5, 5))
 
-  if xrange is None :
-    xrange = [0,nx]
-  if yrange is None :
-    yrange = [0,ny]
+    if xrange is None :
+      xrange = [0,nx]
+    if yrange is None :
+      yrange = [0,ny]
 
-  xticks = [r"${:.1f}$".format(f) for f in np.linspace(xrange[0], xrange[1], 5)]
-  yticks = [r"${:.1f}$".format(f) for f in np.linspace(yrange[0], yrange[1], 5)]
-  ax.set_xticklabels(xticks)
-  ax.set_yticklabels(yticks)
+    xticks = [r"${:.1f}$".format(tick) for tick in np.linspace(xrange[0], xrange[1], 5)]
+    yticks = [r"${:.1f}$".format(tick) for tick in np.linspace(yrange[0], yrange[1], 5)]
+    ax.set_xticklabels(xticks)
+    ax.set_yticklabels(yticks)
 
-  # set the axes labels
-  if xlabel is not None :
-    ax.set_xlabel(xlabel)
-  if ylabel is not None :
-    ax.set_ylabel(ylabel)
+    # set the axes labels
+    if xlabel is not None :
+      ax.set_xlabel(xlabel)
+    if ylabel is not None :
+      ax.set_ylabel(ylabel)
 
   # set title
   if title is not None :
     ax.set_title(title)
-
-  # set annotation
-
 
   # set colorbar
   if colorbar == True :
@@ -102,16 +143,21 @@ def plot_proj(ax, proj,
 # end def plot_proj()
 
 if __name__ == "__main__" :
-  """ SOME MACROS """
+  """
+  ================================================================================
+  SOME MACROS
+  ================================================================================
+  """
   import argparse
   import h5py
 
+  # matplotlib initialisation
   matplotlib.style.use('classic')
   matplotlib.rcParams['text.usetex'] = True
   matplotlib.rcParams['text.latex.preamble'] = [r'\usepackage{amsmath}']
   matplotlib.rc('font', **{'family': 'DejaVu Sans', 'weight':'normal', 'size': 18})
-  matplotlib.rc('text', usetex=True)
 
+  # argument parsing
   parser = argparse.ArgumentParser(description='predefined macros for common tasks.')
   parser.add_argument('path', type=str,
                       help='the path to the file to be loaded')
@@ -158,7 +204,7 @@ if __name__ == "__main__" :
                   xrange=xrange, yrange=yrange, xlabel=xlabel, ylabel=ylabel,
                   title=r'$t={:.1f}T$'.format(time_in_T), annotation=None,
                   colorbar_title=r"Projected density $[\mathrm{g}\,\mathrm{cm}^{-2}]$",
-                  colorbar=True, log=True, plot_range=[1e-2,2e-1])
+                  colorbar=True, log=True, color_range=[1e-2,2e-1])
 
     if args.o is None :
       if args.ext is None :
