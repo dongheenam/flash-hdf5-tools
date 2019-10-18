@@ -145,7 +145,7 @@ class H5file :
 
   def __init__(self, path) :
     slash_loc = path.rfind('/')
-    if slash_loc = -1 :
+    if slash_loc == -1 :
       self.dir_to_file = ''
       self.filename = path
     else :
