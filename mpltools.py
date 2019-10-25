@@ -116,7 +116,7 @@ def plot_1D(ax, x, y, overplot=False,
 
 def plot_proj(ax, proj, overplot=False,
               xrange=None, yrange=None, xlabel=None, ylabel=None,
-              title=None, colorbar=False, colorbar_title=None,
+              title=None, colorbar=False, colorbar_title=None, annotation=None,
               log=False, color_range=[None,None], **imshow_kwargs) :
   """
   DESCRIPTION
@@ -156,6 +156,7 @@ def plot_proj(ax, proj, overplot=False,
           returns the mappable image (to be used for colorbar outside the axes)
   """
   from matplotlib.colors import LogNorm
+  from matplotlib.offsetbox import AnchoredText
   from mpl_toolkits.axes_grid1.axes_divider import make_axes_locatable
 
   if log == True :
@@ -279,14 +280,14 @@ if __name__ == "__main__" :
 
   # draws the projeciton_mpi hdf5 file
   if args.proj_mpi :
-    print("plotting the projected field from {}...".format(path))
-    h5f = h5py.File(args.path)
+    print("plotting the projected field from {}...".format(path[0]))
+    h5f = h5py.File(args.path[0])
 
-    proj_axis = path[-4]
-    proj_title = path[-14:-3]
-    proj_field = path[-14:-5]
+    proj_axis = path[0][-4]
+    proj_title = path[0][-14:-3]
+    proj_field = path[0][-14:-5]
 
-    dens_proj = h5f['dens_proj']
+    dens_proj = h5f[proj_field]
     xyz_lim = np.array(h5f['minmax_xyz']) / 3.086e18
 
     if proj_axis == 'x' :
@@ -304,17 +305,17 @@ if __name__ == "__main__" :
 
     time_in_T = h5f['time'][0] / 3.086e13
 
-    plot_proj(ax, h5f[proj_field],
+    plot_proj(ax, dens_proj,
                   xrange=xrange, yrange=yrange, xlabel=xlabel, ylabel=ylabel,
-                  title=r'$t={:.1f}T$'.format(time_in_T), annotation=None,
-                  colorbar_title=r"Projected density $[\mathrm{g}\,\mathrm{cm}^{-2}]$",
-                  colorbar=True, log=True, color_range=[1e-2,2e-1])
+                  title=r'$t={:.1f}T$'.format(time_in_T), annotation=r"$\beta=2$",
+                  colorbar_title=r"Density $[\mathrm{g}\,\mathrm{cm}^{-3}]$",
+                  colorbar=True, log=True, color_range=(None,None))
 
     if args.o is None :
       if args.ext is None :
-        save_path = path[:-2] + 'png'
+        save_path = path[0][:-2] + 'png'
       else :
-        save_path = path[:-2] + args.ext
+        save_path = path[0][:-2] + args.ext
     else :
       save_path = args.o
 
