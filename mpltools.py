@@ -11,6 +11,39 @@ import matplotlib.gridspec as gridspec
 # OTHER DEPENDENCIES
 import numpy as np
 
+def mpl_init() :
+  # overall plot style
+  matplotlib.style.use('classic')
+  matplotlib.rcParams['figure.figsize'] = (8,7)
+  matplotlib.rcParams['savefig.bbox'] = 'tight'
+
+  # text
+  matplotlib.rcParams['text.usetex'] = True
+  matplotlib.rcParams['text.latex.preamble'] = [r'\usepackage{amsmath}']
+  matplotlib.rc('font', **{'family': 'DejaVu Sans', 'weight':'normal', 'size': 18})
+
+  # ticks and lines
+  matplotlib.rcParams['xtick.major.size'] = 12
+  matplotlib.rcParams['ytick.major.size'] = 12
+  matplotlib.rcParams['xtick.minor.size'] = 6
+  matplotlib.rcParams['ytick.minor.size'] = 6
+
+  matplotlib.rcParams['axes.linewidth'] = 1
+  matplotlib.rcParams['xtick.major.width'] = 1
+  matplotlib.rcParams['ytick.major.width'] = 1
+  matplotlib.rcParams['xtick.minor.width'] = 1
+  matplotlib.rcParams['ytick.minor.width'] = 1
+
+  matplotlib.rcParams['lines.markeredgewidth'] = 0
+
+  # legend
+  matplotlib.rcParams['legend.numpoints']     = 1
+  matplotlib.rcParams['legend.frameon']       = False
+  matplotlib.rcParams['legend.handletextpad'] = 0.3
+
+# enddef mpl_init
+
+
 """
 ================================================================================
 PLOTTER FUNCTIONS
@@ -224,10 +257,7 @@ if __name__ == "__main__" :
   import h5py
 
   # matplotlib initialisation
-  matplotlib.style.use('classic')
-  matplotlib.rcParams['text.usetex'] = True
-  matplotlib.rcParams['text.latex.preamble'] = [r'\usepackage{amsmath}']
-  matplotlib.rc('font', **{'family': 'DejaVu Sans', 'weight':'normal', 'size': 18})
+  mpl_init()
 
   # argument parsing
   parser = argparse.ArgumentParser(description='predefined macros for common tasks.')
@@ -252,7 +282,7 @@ if __name__ == "__main__" :
     styles = ([{'marker':'o', 'markersize':5, 'color':'red', 'alpha':1.0, 'label':r'$\mathrm{targ\_beta}=1$', 'linewidth':3, 'linestyle':'-'},
               {'marker':'o', 'markersize':5, 'color':'blue', 'alpha':1.0, 'label':r'$\mathrm{targ\_beta}=2$', 'linewidth':3, 'linestyle':'-'}])
 
-    fig = plt.figure(figsize=(8,7))
+    fig = plt.figure(figsize=(4,3.5))
     ax = fig.add_subplot(111)
 
     for location, style in zip(path, styles) :
