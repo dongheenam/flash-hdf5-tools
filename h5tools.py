@@ -29,12 +29,11 @@ def read_parameters(h5f, dataname) :
   """
 
   # parameters
+  # python3 : keys are now in bytes
   params = dict(h5f[dataname])
 
   # strip the spaces for easier access
-  keys_stripped = [keys.strip() for keys in params.keys()]
-  for newkey, oldkey in zip(keys_stripped, params.keys()) :
-    params[newkey] = params.pop(oldkey)
+  params = {x.decode("utf-8").replace(' ','') : v for x,v in param.items()}
 
   return params
 
