@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 # DEPENDENCIES
 import gc                     # garbage collection
@@ -33,7 +33,7 @@ def read_parameters(h5f, dataname) :
   params = dict(h5f[dataname])
 
   # strip the spaces for easier access
-  params = {x.decode("utf-8").replace(' ','') : v for x,v in param.items()}
+  params = {x.decode("utf-8").replace(' ','') : v for x,v in params.items()}
 
   return params
 

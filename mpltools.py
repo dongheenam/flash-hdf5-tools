@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 
 # MATPLOTLIB SETUP
 import matplotlib
@@ -12,6 +12,8 @@ import matplotlib.gridspec as gridspec
 import numpy as np
 
 def mpl_init() :
+  """ loads predefined plotting parameters """
+  
   # overall plot style
   matplotlib.style.use('classic')
   matplotlib.rcParams['figure.figsize'] = (8,7)

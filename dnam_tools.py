@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 # DEPENDENCIES
 import numpy as np
@@ -15,20 +15,6 @@ def merge_dicts(*dict_args) :
     for dictionary in dict_args :
         result.update(dictionary)
     return result
-
-"""
-FUNCTION calc_average(*dict_args)
-
-DESCRIPTION
-
-"""
-def calc_average(*data_list) :
-  sum_data = data_list[0]
-  for i in range(1, len(data_list)) :
-    sum_data += data_list[i]
-
-  return sum_data / len(data_list)
-
 
 def read_dat(path) :
   result = np.genfromtxt(path, names=True)
