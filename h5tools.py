@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 # DEPENDENCIES
+import os
 import gc                     # garbage collection
 from datetime import datetime # time measurement
 import h5py                   # hdf5 handling
@@ -33,7 +34,7 @@ def read_parameters(h5f, dataname) :
   params = dict(h5f[dataname])
 
   # strip the spaces for easier access
-  params = {x.decode("utf-8").replace(' ','') : v for x,v in params.items()}
+  params = {x.decode("utf-8").rstrip() : v for x,v in params.items()}
 
   return params
 
@@ -116,7 +117,7 @@ def sort(H5file, data) :
     # update the sorted data
     return data_sorted
 
-class H5file :
+class H5file(object) :
     """
     ================================================================================
     DESCRIPTION
@@ -127,7 +128,7 @@ class H5file :
             the full path to the hdf5 file
 
     VARIABLES
-        H5file.dir_to_file (string)
+        H5file.dir (string)
             the directory where the file is located
         H5file.filename (string)
             the name of the hdf5 file
@@ -143,13 +144,9 @@ class H5file :
     """
 
     def __init__(self, path) :
-        slash_loc = path.rfind('/')
-        if slash_loc == -1 :
-            self.dir_to_file = ''
-            self.filename = path
-        else :
-            self.dir_to_file = path[slash_loc+1 : ]
-            self.filename =    path[ : slash_loc+1]
+        self.dir, self.filename = os.path.split(path)
+        if self.dir is None :
+            self.dir = ''
         self.h5f = h5py.File(path, 'r')
 
         int_params = read_parameters(self.h5f, 'integer runtime parameters')
@@ -244,7 +241,7 @@ class H5file :
         def save_to_hdf5(self, list_data_to_save, list_name, path_to_save=None) :
             if path_to_save is None :
                 path_to_save = "{}{}_{}.hdf5".format(
-                               self.H5file.dir_to_file, self.H5file.filename, list_name[-1] )
+                               self.H5file.dir, self.H5file.filename, list_name[-1] )
 
             h5_out = h5py.File(path_to_save,'w')
             for data_to_save, name in zip(list_data_to_save, list_name) :
@@ -256,7 +253,7 @@ class H5file :
         def save_to_dat(self, list_data_to_save, list_name, path_to_save=None) :
             if path_to_save is None :
                 path_to_save = "{}{}_{}.dat".format(
-                               self.H5file.dir_to_file, self.H5file.filename, list_name[-1] )
+                               self.H5file.dir, self.H5file.filename, list_name[-1] )
 
             dat_out = open(path_to_save, mode='w')
             print("{} saving to: {}...".format( list_name[-1], path_to_save ))
@@ -386,7 +383,7 @@ class H5file :
                 axis_no = 2
             else :
                 print("axis input not set up properly!")
-                break
+                return
 
             self.data = np.sum(self.data, axis=axis_no)
 
@@ -482,14 +479,14 @@ class H5file :
             self.H5file = H5file
             self.dataname = dataname
             self.small_mem = small_mem
-        if small_mem :
-            self.datax = None
-            self.datay = None
-            self.dataz = None
-        else :
-            self.datax = sort(H5file, H5file.h5f[dataname+'x'])
-            self.datay = sort(H5file, H5file.h5f[dataname+'y'])
-            self.dataz = sort(H5file, H5file.h5f[dataname+'z'])
+            if small_mem :
+                self.datax = None
+                self.datay = None
+                self.dataz = None
+            else :
+                self.datax = sort(H5file, H5file.h5f[dataname+'x'])
+                self.datay = sort(H5file, H5file.h5f[dataname+'y'])
+                self.dataz = sort(H5file, H5file.h5f[dataname+'z'])
 
         def calc_ps_3D(self, save=False, save_path=None) :
             t_start = datetime.now()
@@ -534,6 +531,84 @@ class H5file :
                 dataset_name = self.dataname + "3dps"
                 self.save_to_hdf5([self.ps_3D], [dataset_name], path_to_save=save_path)
         # end def calc_ps_3D
+
+class Partfile(object) :
+    """
+    ================================================================================
+    DESCRIPTION
+        container for a FLASH particle file
+
+    INPUTS
+        path (string)
+            the full path to the hdf5 file
+
+    VARIABLES
+        Partfile.dir (string)
+            the directory where the file is located
+        Partfile.filename (string)
+            the name of the hdf5 file
+        Partfile.h5f (h5py.File)
+            the h5py File object
+        Partfile.params (dictionary)
+            the integer/real parameters/scalars from the file
+
+    METHODS
+
+    ================================================================================
+    """
+
+    def __init__(self, path) :
+        self.dir, self.filename = os.path.split(path)
+        if self.dir is None :
+            self.dir = ''
+        self.h5f = h5py.File(path, 'r')
+
+        int_params = read_parameters(self.h5f, 'integer runtime parameters')
+        real_params = read_parameters(self.h5f, 'real runtime parameters')
+        int_scalars = read_parameters(self.h5f, 'integer scalars')
+        real_scalars = read_parameters(self.h5f, 'real scalars')
+        self.params = dnam_tools.merge_dicts(int_params, real_params, int_scalars, real_scalars)
+
+        try :
+            self.particles = self.read_parts()
+        except KeyError :
+            self.particles = None
+
+        nxb = self.params['nxb']
+        nyb = self.params['nyb']
+        nzb = self.params['nzb']
+        iprocs = self.params['iprocs']
+        jprocs = self.params['jprocs']
+        kprocs = self.params['kprocs']
+        self.params['dims'] = [nxb*iprocs, nyb*jprocs, nzb*kprocs]
+
+        xmin = self.params['xmin']
+        xmax = self.params['xmax']
+        ymin = self.params['ymin']
+        ymax = self.params['ymax']
+        zmin = self.params['zmin']
+        zmax = self.params['zmax']
+        self.params['Lmin'] = [xmin, ymin, zmin]
+        self.params['Lmax'] = [xmax, ymax, zmax]
+        self.params['L'] = [xmax-xmin, ymax-ymin, zmax-zmin]
+
+        print("{} read!".format(path))
+        print("simulation time: {}".format(self.params['time']))
+        print("size           : {}".format(self.params['dims']))
+        print("domain         : {}".format(self.params['L']))
+        n_parts = 0 if self.particles is None else len(self.particles)
+        print("No. of parts   : {}".format(n_parts))
+
+    def read_parts(self) :
+
+        # names of the particle parameters
+        pnames = self.h5f['particle names']
+        dtype = [(pname[0].decode("utf-8").rstrip(), 'f8') for pname in pnames]
+
+        particles_raw = [tuple(p) for p in self.h5f['tracer particles']]
+        particles = np.array(particles_raw, dtype=dtype)
+        return particles
+
 
 if __name__== "__main__":
     """

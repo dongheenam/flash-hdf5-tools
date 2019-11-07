@@ -10,6 +10,7 @@ import matplotlib.gridspec as gridspec
 
 # OTHER DEPENDENCIES
 import numpy as np
+import h5tools
 
 def mpl_init() :
     """ loads predefined plotting parameters """
@@ -50,23 +51,22 @@ def mpl_init() :
 PLOTTER FUNCTIONS
 ================================================================================
 """
-def plot_1D(ax, x, y, overplot=False,
-            xrange=(None, None), yrange=(None, None), xlabel=None, ylabel=None,
-            title=None, annotation=None,
-            log=(False, False), fit=None, fit_range=None,
-            **plot_kwargs) :
+def plot_1D(x, y,
+    ax=plt.gca(), overplot=False, xrange=(None, None), yrange=(None, None),
+    xlabel=None, ylabel=None, title=None, annotation=None, log=(False, False),
+    fit=None, fit_range=None, **plot_kwargs) :
     """
     DESCRIPTION
         Plots a single line plot atop the specified axis
 
     INPUTS
-        ax (matplotlib.axes)
-            the axis the projection will be plotted on
         x (array_like[N])
             the x-coordinates
         y (array_like[N])
             the y-coordinates
 
+        ax (matplotlib.axes)
+            the axis the projection will be plotted on
         overplot (boolean)
             set this to True not to reinitialise the axes ranges and ticks
         xrange, yrange (array_like[2])
@@ -142,13 +142,109 @@ def plot_1D(ax, x, y, overplot=False,
         # overplot the fitted curve
         ax.plot(x, np.power(10, logf(np.log10(x), *popt)),
                 color=plot_kwargs['color'], linewidth=plot_kwargs['linewidth']*2, alpha=0.3,
-                label=r"$k^{%5.3f\pm%5.3f}$" % (popt[1],np.sqrt(np.diag(pcov))[1]))
+                label=rf"$k^{{ {popt[1]:5.3f}\pm {np.sqrt(np.diag(pcov))[1]:5.3f} }}$")
 
     # endif fit
     plt.tight_layout()
 # enddef plot_1D
 
-def plot_proj(ax, proj, overplot=False,
+def plot_scatter(x, y,
+    ax=plt.gca(), overplot=False, xrange=(None, None), yrange=(None, None),
+    xlabel=None, ylabel=None, title=None, annotation=None, log=(False, False),
+    fit=None, fit_range=None, **plot_kwargs) :
+    """
+    DESCRIPTION
+        Plots a single scatter atop the specified axis
+
+    INPUTS
+        x (array_like[N])
+            the x-coordinates
+        y (array_like[N])
+            the y-coordinates
+
+        ax (matplotlib.axes)
+            the axis the projection will be plotted on
+        overplot (boolean)
+            set this to True not to reinitialise the axes ranges and ticks
+        xrange, yrange (array_like[2])
+            [min, max] of the axes
+        xlabel, ylabel (str)
+            axes labels (to be passed on to ax.set_xlabel and ax.set_ylabel)
+        title (str)
+            plot title
+        annotation (str)
+            extra text to be displayed as anchored text
+        fit (str)
+            adds a linear ("linear") or log-log ("loglog") fit
+        fit_range (array_like[2])
+            the range of x and y to be fitted for
+
+        plot_kwargs (keyword arguments)
+            keyward arguments to be passed to matplotlib.axes.plot
+    """
+    from matplotlib.offsetbox import AnchoredText
+    from scipy.optimize import curve_fit
+
+    # plot the data
+    ax.scatter(x, y, **plot_kwargs)
+
+    if not overplot :
+        # set the log scale :
+        if log[0] is True :
+            ax.set_xscale("log")
+        if log[1] is True :
+            ax.set_yscale("log")
+
+        # set the axes ranges
+        ax.set_xlim(left=xrange[0], right=xrange[1])
+        ax.set_ylim(bottom=yrange[0], top=yrange[1])
+
+        # set the axes labels
+        if xlabel is not None :
+            ax.set_xlabel(xlabel)
+        if ylabel is not None :
+            ax.set_ylabel(ylabel)
+
+        # set title
+        if title is not None :
+            ax.set_title(title)
+
+        # annotation
+        if annotation is not None :
+            at = AnchoredText(annotation, loc='upper left', frameon=True)
+            at.patch.set_boxstyle("round,pad=0.,rounding_size=0.2")
+            ax.add_artist(at)
+    # endif not overplot
+
+    # fitting
+    if fit == "linear" :
+        pass
+    elif fit == "loglog" :
+        # perform a linear fit in log-log space
+        def logf(logx, a, b) :
+            return a + logx*b
+
+        # crop the x and y according to the fitting range
+        if fit_range is not None :
+            x_fit = x[fit_range[0]:fit_range[1]]
+            y_fit = y[fit_range[0]:fit_range[1]]
+        else :
+            x_fit = x
+            y_fit = y
+
+        # perform the fitting
+        print("begin fitting...")
+        popt, pcov = curve_fit(logf, np.log10(x_fit), np.log10(y_fit), p0=(1,0))
+
+        # overplot the fitted curve
+        ax.plot(x, np.power(10, logf(np.log10(x), *popt)),
+                color=plot_kwargs['color'], linewidth=plot_kwargs['linewidth']*2, alpha=0.3,
+                label=rf"$k^{{ {popt[1]:5.3f}\pm {np.sqrt(np.diag(pcov))[1]:5.3f} }}$")
+    # endif fit
+    plt.tight_layout()
+# enddef plot_scatter
+
+def plot_proj(proj, ax=plt.gca(), overplot=False,
               xrange=None, yrange=None, xlabel=None, ylabel=None,
               title=None, colorbar=False, colorbar_title=None, annotation=None,
               log=False, color_range=[None,None], **imshow_kwargs) :
@@ -198,27 +294,21 @@ def plot_proj(ax, proj, overplot=False,
     else :
         norm = None
 
+    if (xrange is not None) and (yrange is not None) :
+        extent = [xrange[0], xrange[1], yrange[0], yrange[1]]
+    else :
+        extent = None
+
     # plot the projection data
     im = ax.imshow(np.transpose(proj),
                    norm=norm, origin='lower', cmap='magma', aspect='equal',
-                   vmin=color_range[0], vmax=color_range[1],
+                   vmin=color_range[0], vmax=color_range[1], extent=extent,
                    **imshow_kwargs)
 
     if not overplot :
-        # set the ticks
-        ny, nx = proj.shape
-        ax.set_xticks(np.linspace(-0.5, nx+0.5, 5))
-        ax.set_yticks(np.linspace(-0.5, ny+0.5, 5))
-
-        if xrange is None :
-            xrange = [0,nx]
-        if yrange is None :
-            yrange = [0,ny]
-
-        xticks = [r"${:.1f}$".format(tick) for tick in np.linspace(xrange[0], xrange[1], 5)]
-        yticks = [r"${:.1f}$".format(tick) for tick in np.linspace(yrange[0], yrange[1], 5)]
-        ax.set_xticklabels(xticks)
-        ax.set_yticklabels(yticks)
+        # set the axes ranges
+        ax.set_xlim(left=xrange[0], right=xrange[1])
+        ax.set_ylim(bottom=yrange[0], top=yrange[1])
 
         # set the axes labels
         if xlabel is not None :
@@ -292,7 +382,7 @@ if __name__ == "__main__" :
 
             overplot = False if location == path[0] else True
             print("plotting {}...".format(location))
-            plot_1D(ax, x, y, overplot=overplot,
+            plot_1D(x, y, ax=ax, overplot=overplot,
                     xrange=(1, 128), yrange=(1e6, 5e9), xlabel='$k$', ylabel='$P_v(k)$',
                     title=None, annotation=None,
                     log=(True, True), fit='loglog', fit_range=(3, 20),
@@ -312,41 +402,71 @@ if __name__ == "__main__" :
     # draws the projeciton_mpi hdf5 file
     if args.proj_mpi :
         print("plotting the projected field from {}...".format(path[0]))
-        h5f = h5py.File(args.path[0])
+        h5f = h5py.File(path[0], 'r')
 
-        proj_axis = path[0][-4]
-        proj_title = path[0][-14:-3]
-        proj_field = path[0][-14:-5]
+        path_name_only = path[0].split(".")[0]
+        proj_axis = path_name_only[-1]
+        proj_title = "_".join(path_name_only.split("_")[-3:-1])
 
-        dens_proj = h5f[proj_field]
+        # find for a particle file assiciated with the proj_mpi result
+        i = path_name_only.find("plt_cnt")
+        part_filename = path_name_only[:i]+'part'+path_name_only[i+7:i+12]
+        try :
+            pf = h5tools.Partfile(part_filename)
+            part_exists = False if pf.particles is None else True
+        except OSError :
+            print(f"particle file {part_filename} not found...")
+            part_exists = False
+
+        dens_proj = h5f[proj_title]
         xyz_lim = np.array(h5f['minmax_xyz']) / 3.086e18
 
         if proj_axis == 'x' :
             xlabel, ylabel = (r'$y \,[\mathrm{pc}]$', r'$z \,[\mathrm{pc}]$')
             xrange, yrange = (xyz_lim[1], xyz_lim[2])
+            if part_exists :
+                part_xlocs = pf.particles['posy'] / 3.086e18
+                part_ylocs = pf.particles['posz'] / 3.086e18
         elif proj_axis == 'y' :
             xlabel, ylabel = (r'$x \,[\mathrm{pc}]$', r'$z \,[\mathrm{pc}]$')
             xrange, yrange = (xyz_lim[0], xyz_lim[2])
+            if part_exists :
+                part_xlocs = pf.particles['posx'] / 3.086e18
+                part_ylocs = pf.particles['posz'] / 3.086e18
         elif proj_axis == 'z' :
             xlabel, ylabel = (r'$x \,[\mathrm{pc}]$', r'$y \,[\mathrm{pc}]$')
             xrange, yrange = (xyz_lim[0], xyz_lim[1])
+            if part_exists :
+                part_xlocs = pf.particles['posx'] / 3.086e18
+                part_ylocs = pf.particles['posy'] / 3.086e18
+
+        if not part_exists :
+            part_xlocs = []
+            part_ylocs = []
 
         fig = plt.figure(figsize=(8,7))
         ax = fig.add_subplot(111)
 
         time_in_T = h5f['time'][0] / 3.086e13
+        time_in_Tff = h5f['time'][0] / 3.349e12
+        SFE = 100.0* np.sum(pf.particles['mass']) / 3.082e36 if part_exists else 0.0
 
-        plot_proj(ax, dens_proj,
+        annotation = ( rf'$t={time_in_T:.1f}T = {time_in_Tff:.1f}T_\mathrm{{ff}}$'+'\n'
+                       rf'$\mathrm{{SFE}}={SFE:.1f}\%$' )
+        plot_proj(dens_proj, ax=ax,
                   xrange=xrange, yrange=yrange, xlabel=xlabel, ylabel=ylabel,
-                  title=r'$t={:.1f}T$'.format(time_in_T), annotation=r"$\beta=2$",
-                  colorbar_title=r"Density $[\mathrm{g}\,\mathrm{cm}^{-3}]$",
-                  colorbar=True, log=True, color_range=(None,None))
+                  title=r'$\beta=1, \rho=2\rho_0$', annotation=annotation,
+                  colorbar_title=r"Column Density $[\mathrm{g}\,\mathrm{cm}^{-2}]$",
+                  colorbar=True, log=True, color_range=(0.01,0.3))
+
+        plot_scatter(part_ylocs, part_xlocs, ax=ax, xrange=xrange, yrange=yrange,
+                     overplot=True, marker='o', color='greenyellow')
 
         if args.o is None :
             if args.ext is None :
-                save_path = path[0][:-2] + 'png'
+                save_path = path_name_only + '.png'
             else :
-                save_path = path[0][:-2] + args.ext
+                save_path = path_name_only + '.' + args.ext
         else :
             save_path = args.o
 

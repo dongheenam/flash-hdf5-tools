@@ -2,23 +2,32 @@
 
 # DEPENDENCIES
 import numpy as np
+import glob
 
-"""
-FUNCTION merged_dicts = merge_dicts(*dict_args)
 
-DESCRIPTION
-    Given any number of dicts, shallow copy and merge into a new dict,
-    precedence goes to key value pairs in latter dicts.
-"""
 def merge_dicts(*dict_args) :
+    """
+    DESCRIPTION
+        Given any number of dicts, shallow copy and merge into a new dict,
+        precedence goes to key value pairs in latter dicts.
+    """
     result = {}
     for dictionary in dict_args :
         result.update(dictionary)
     return result
 
-def read_dat(path) :
-    result = np.genfromtxt(path, names=True)
-    return result
+def get_file(path, loc='last') :
+    """
+    DESCRIPTION
+        From the specified path (with wildcards),
+        return the filename at the specific lococation (first or last)
+    """
+    files = glob.glob(path)
+    files.sort()
+    if loc == 'last' :
+        return files[-1]
+    elif loc == 'first' :
+        return files[0]
 
 """
 ================================================================================
