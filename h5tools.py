@@ -4,41 +4,41 @@
 import os
 import gc                     # garbage collection
 from datetime import datetime # time measurement
+
 import h5py                   # hdf5 handling
 import numpy as np
-
 import pyfftw                 # python wrapper for FFTW
 
 import dnam_tools                # my tools for python
 
-def read_parameters(h5f, dataname) :
-  """
-  DESCRIPTION
-      return the specified parameter group as a dictionary from the FLASH hdf5 file
+def read_parameters(h5f, keyword) :
+    """
+    DESCRIPTION
+      return the specified parameter group
+      as a dictionary from the FLASH hdf5 file
 
-  INPUTS
-      h5f (h5py.File)
-          the h5py File object containing the hdf5 file
-      dataname (string)
-          the keyword for the parameter group
-            e.g.: ['integer runtime parameters', 'real runtime parameters',
-                   'integer scalars', 'real scalars']
+    INPUTS
+        h5f (h5py.File)
+            the h5py File object containing the hdf5 file
+        keyword (string)
+            the keyword for the parameter group
+                e.g. 'integer runtime parameters', 'real runtime parameters',
+                     'integer scalars', 'real scalars'
 
-  OUTPUTS
-      dict (dictionary)
-          contains the parameters, which can be accessed with their names e.g. dict['nxb']
-  """
+    OUTPUTS
+        dict (dictionary)
+            contains the parameters, which can be accessed with their names
+                e.g. dict['nxb']
+    """
+    # parameters
+    params = dict(h5f[keyword])
 
-  # parameters
-  # python3 : keys are now in bytes
-  params = dict(h5f[dataname])
+    # strip the spaces for easier access
+    # python3 : keys are now in bytes
+    params = {x.decode("utf-8").rstrip() : v for x,v in params.items()}
+    return params
 
-  # strip the spaces for easier access
-  params = {x.decode("utf-8").rstrip() : v for x,v in params.items()}
-
-  return params
-
-def read_array(h5f, dataname):
+def read_data(h5f, dataname):
     """
     DESCRIPTION
     return the specified array that does not need to be sorted
@@ -55,13 +55,11 @@ def read_array(h5f, dataname):
         array (float[: , ... , :])
             the NumPy array containing the data
     """
-
     # the parameters
-    array = np.array(h5f[dataname])
+    data = np.array(h5f[dataname])
+    return data
 
-    return array
-
-def sort(H5file, data) :
+def sort_field(H5file, data_unsorted) :
     """
     DESCRIPTION
         by default the FLASH file prints the field in [nProcs, nzb, nyb, nxb]
@@ -71,208 +69,223 @@ def sort(H5file, data) :
     INPUTS
     H5file
         the H5file instance
-    data (float[nProcs, nzb, nyb, nxb])
+    data_unsorted (float[nProcs, nzb, nyb, nxb])
         the raw data from the FLASH hdf5 file
 
     OUTPUTS
         data_sorted (float[N_x, N_y, N_z])
             the 3D NumPy array containing the sorted data
     """
-
     # some parameters required for the sorting
     # they are read from the parent class (H5file)
-    dims = np.array( H5file.params['dims'] )
-    L_bl = np.array( H5file.params['Lmin'] )
-    L_tr = np.array( H5file.params['Lmax'] )
-    L = L_tr - L_bl
-    L_cell = L / dims
+    dims = np.array( H5file.params['dims'] )    # simulation dimensions
+    L_bl = np.array( H5file.params['Lmin'] )    # bottom left corner coordinates
+    L_tr = np.array( H5file.params['Lmax'] )    # top right corner coordinates
+    L = L_tr - L_bl                             # simulation box size
+    L_cell = L / dims                           # size of a single cell
 
     block_sizes = H5file.block_sizes
-    box_coords = H5file.block_coords
+    block_coords = H5file.block_coords
 
     # the raw field array has structure of [nProcs, nzb, nyb, nxb]
     # so transposing is necessary to have shape of [nProcs, nxb, nyb, nzb]
-    data = np.transpose(data, (0,3,2,1))
+    data_unsorted = np.transpose(data_unsorted, (0,3,2,1))
 
-    # place the boxes in the 3D array
+    # first create the space for the entire data
     data_sorted = np.zeros(dims)
 
+    # loop over each block
     iprocs = H5file.params['iprocs']
     jprocs = H5file.params['jprocs']
     kprocs = H5file.params['kprocs']
-    for proc_id in range(iprocs*jprocs*kprocs) :
-
+    for block_id in range(iprocs*jprocs*kprocs) :
         # bottom left corner
-        box_loc_bl = box_coords[proc_id] - block_sizes[proc_id]/2
-        index_bl = np.rint( (box_loc_bl - L_bl)/L_cell ).astype(int)
-
+        block_bl_loc = block_coords[block_id] - block_sizes[block_id]/2
+        block_bl_ind = np.rint( (block_bl_loc - L_bl)/L_cell ).astype(int)
         # top right corner
-        box_loc_tr = box_coords[proc_id] + block_sizes[proc_id]/2
-        index_tr = np.rint( (box_loc_tr - L_bl)/L_cell ).astype(int)
+        block_tr_loc = block_coords[block_id] + block_sizes[block_id]/2
+        block_tr_ind = np.rint( (block_tr_loc - L_bl)/L_cell ).astype(int)
 
         # insert the block
-        data_sorted[index_bl[0]:index_tr[0], index_bl[1]:index_tr[1], index_bl[2]:index_tr[2]] \
-                    = data[proc_id]
+        data_sorted[block_bl_ind[0]:block_tr_ind[0], \
+                    block_bl_ind[1]:block_tr_ind[1], \
+                    block_bl_ind[2]:block_tr_ind[2]] \
+            = data_unsorted[block_id]
 
     # update the sorted data
     return data_sorted
 
-class H5file(object) :
+def save_to_hdf5(filename_out, *datas_and_names) :
+    """
+    DESCRIPTION
+        save the sets of data to a hdf5 file
+
+    INPUTS
+    filename_out
+        the name of the hdf5 file that will be created
+    datas_and_names (array_like[:])
+        tuples of the data and its name
+            e.g. [(data1, name1), (data2, name2), ... ]
+    """
+    h5f_out = h5py.File(filename_out,'w')
+    for data, dataname in datas_and_names :
+        print(f"saving {dataname} to: {filename_out}...")
+        h5f_out.create_dataset(name, data=data_to_save)
+    h5f_out.close()
+    print("file saved!")
+
+def save_to_dat(filename_out, *datas_and_names) :
+    """
+    DESCRIPTION
+        save the sets of data to a .dat file
+
+    INPUTS
+    filename_out
+        the name of the hdf5 file that will be created
+    datas_and_names (array_like[:])
+        tuples of the data and its name
+            e.g. [(data1, name1), (data2, name2), ... ]
+        the data must be one-dimensional
+    """
+    dat_out = open(filename_out, mode='w')
+
+    # split the data and datanames
+    datas = [dn[0] for dn in datas_and_names]
+    datanames = [dn[1] for dn in datas_and_names]
+    print(f"saving {datanames} to: {filename_out}...")
+    # row and column lengths of the dat file
+    n_cols = len(datanames)
+    n_rows = np.min([len(data) for data in datas])
+
+    # print the data
+    dat_out.write(("{:>20s}"*n_cols+'\n').format(*tuple(datanames)))
+    for i in range(n_rows) :
+        single_row = tuple([data[i] for data in datas])
+        dat_out.write(("{:20.11E}"*n_cols+'\n').format(*single_row))
+
+    dat_out.close()
+    print("file saved!")
+
+class H5File(object) :
     """
     ================================================================================
     DESCRIPTION
         container for a FLASH hdf5 file and its parameters
 
     INPUTS
-        path (string)
-            the full path to the hdf5 file
+        filename (string)
+            the name of the hdf5 file
 
     VARIABLES
-        H5file.dir (string)
-            the directory where the file is located
-        H5file.filename (string)
+        H5File.filename (string)
             the name of the hdf5 file
-        H5file.h5f (h5py.File)
+        H5File.h5f (h5py.File)
             the h5py File object
-        H5file.params (dictionary)
+        H5File.params (dictionary)
             the integer/real parameters/scalars from the file
+        H5File.block_sizes (array_like[nprocs, 3])
+            the size of each block
+        H5File.block_coords (array_like[nprocs, 3])
+            the coordinates of the centre of each block
 
     METHODS
         H5file.new_dataset(dataname)
             returns a scalar or vector dataset instance, depending on the data name
     ================================================================================
     """
+    def __init__(self, filename) :
+        self.filename = filename
+        self.h5f = h5py.File(filename, 'r')
 
-    def __init__(self, path) :
-        self.dir, self.filename = os.path.split(path)
-        if self.dir is None :
-            self.dir = ''
-        self.h5f = h5py.File(path, 'r')
-
+        # read the parameters
         int_params = read_parameters(self.h5f, 'integer runtime parameters')
         real_params = read_parameters(self.h5f, 'real runtime parameters')
         int_scalars = read_parameters(self.h5f, 'integer scalars')
         real_scalars = read_parameters(self.h5f, 'real scalars')
-        self.params = dnam_tools.merge_dicts(int_params, real_params, int_scalars, real_scalars)
+        self.params = dnam_tools.merge_dicts(
+            int_params, real_params, int_scalars, real_scalars)
 
-        nxb = self.params['nxb']
-        nyb = self.params['nyb']
-        nzb = self.params['nzb']
-        iprocs = self.params['iprocs']
-        jprocs = self.params['jprocs']
-        kprocs = self.params['kprocs']
-        self.params['dims'] = [nxb*iprocs, nyb*jprocs, nzb*kprocs]
+        # calculate basic properties
+        # number of cells in each direction
+        self.params['dims'] = [self.params['nxb']*self.params['iprocs'],
+                               self.params['nyb']*self.params['jprocs'],
+                               self.params['nzb']*self.params['kprocs']]
+        # leftmost, rightmost coordinates of the simulation
+        Lmin = [self.params['xmin'], self.params['ymin'], self.params['zmin']]
+        Lmax = [self.params['xmax'], self.params['ymax'], self.params['zmax']]
+        self.params['Lmin'] = Lmin
+        self.params['Lmax'] = Lmax
+        # box size of the simulation
+        self.params['L'] = [max-min for max, min in zip(Lmax, Lmin)]
 
-        xmin = self.params['xmin']
-        xmax = self.params['xmax']
-        ymin = self.params['ymin']
-        ymax = self.params['ymax']
-        zmin = self.params['zmin']
-        zmax = self.params['zmax']
-        self.params['Lmin'] = [xmin, ymin, zmin]
-        self.params['Lmax'] = [xmax, ymax, zmax]
-        self.params['L'] = [xmax-xmin, ymax-ymin, zmax-zmin]
+        self.block_sizes = read_data(self.h5f, 'block size')
+        self.block_coords = read_data(self.h5f, 'coordinates')
 
-        self.block_sizes = read_array(self.h5f, 'block size')
-        self.block_coords = read_array(self.h5f, 'coordinates')
-
-        print("{} read!".format(path))
-        print("simulation time: {}".format(self.params['time']))
-        print("size           : {}".format(self.params['dims']))
-        print("domain         : {}".format(self.params['L']))
+        print(f"{filename} read!")
+        print(f"simulation time: {self.params['time']:.4E}")
+        print(f"resolution     : {self.params['dims']}")
+        print(f"domain         : {self.params['L']}")
 
     def new_dataset(self, dataname, small_mem=False) :
-        if dataname == 'dens' :  # for density field              => create a density data set
-            print("attempting to create a density dataset...")
-            return self.DensityDataset(self, small_mem)
+        if dataname == 'dens' :
+            d = self.DensityDataset(self, small_mem)
+            print("created a density dataset!")
+            return d
         else :
-            try :         # see if the dataname exists              => create a scalar data set
-                print("attempting to create a scalar dataset: {}...".format(dataname))
-                return self.ScalarDataset(self, dataname, small_mem)
+            try :
+                d = self.ScalarDataset(self, dataname, small_mem)
+                print(f"created a scalar dataset for {dataname}!")
+                return d
             except :
-                try :       # see if the dataname+"x","y","z" exists  => create a vector data set
-                    print("attempting to create a vector dataset: {}...".format(dataname))
-                    return self.VectorDataset(self, dataname, small_mem)
-                except :    # if the dataname does not exist within the hdf5 file => do nothing
-                    print("dataname not recognised")
+                pass
+            try :
+                d = self.VectorDataset(self, dataname, small_mem)
+                print(f"created a vector dataset for {dataname}!")
+                return d
+            except :
+                print("dataname not recognised!")
+                return
 
     class Dataset(object) :
         """
         ================================================================================
         DESCRIPTION
-            container for a field
+            container for a dataset
 
         INPUTS
-            H5file
-                the outer class H5file
+            H5File
+                the outer class H5File
+            dataname(string)
+                the name of the dataset
+
+            small_mem(boolean) (default=False)
+                set it to True if dataset is too big
 
         VARIABLES
-            Dataset.H5file
+            Dataset.H5File
                 the outer class
             Dataset.dataname (string)
-                the key to access the field in the hdf5 field
+                the name of the data
 
-            Dataset.ft (complex[k_x, k_y, k_z])     <== Dataset.calc_ft()
-                the three-dimensional complex fourier field of .data
-            Dataset.ps_3D (float[k_x, k_y, k_z])     <== Dataset.calc_ps()
-                the three-dimensional power spectrum of .data
-            Dataset.ps (np.array[k_max])            <== Dataset.calc_ps(calc_1D=True)
+            Dataset.ps (array_like[k_max])            <== Dataset.calc_ps(calc_1D=True)
                 the one-dimensional power spectrum of .data
 
         METHODS
-            Dataset.save_to_hdf5(list_data_to_save, list_name, path_to_save=None)
-                save the set of data to a hdf5 file (optional path and filename)
-            Dataset.save_to_dat(list_data_to_save, list_name, path_to_save=None)
-                save the set of data to a dat file (optional path and filename)
-                data is stored in rows with list_name as the header
-
-            Dataset.calc_ps(self, calc_1D=True,
-                        save_1D=False, save_1D_path=None, save_3D=False, save_3D_path=None)
-                calculate the 1D and/or 3D power spetrum
+            Dataset.calc_ps(self, save=False, save_path=None)
+                calculate the 1D spectrum
                 requires the fourier spectrum (self.ft) to exist
         ================================================================================
         """
 
-        def __init__(self, H5file, dataname, small_mem=False) :
-            self.H5file = H5file
+        def __init__(self, H5File, dataname, small_mem=False) :
+            self.H5File = H5File
             self.dataname = dataname
             self.small_mem = small_mem
 
-        def save_to_hdf5(self, list_data_to_save, list_name, path_to_save=None) :
-            if path_to_save is None :
-                path_to_save = "{}{}_{}.hdf5".format(
-                               self.H5file.dir, self.H5file.filename, list_name[-1] )
-
-            h5_out = h5py.File(path_to_save,'w')
-            for data_to_save, name in zip(list_data_to_save, list_name) :
-                print("{} saving to: {}...".format( name, path_to_save ))
-                h5_out.create_dataset(name, data=data_to_save)
-            h5_out.close()
-            print("file saved!")
-
-        def save_to_dat(self, list_data_to_save, list_name, path_to_save=None) :
-            if path_to_save is None :
-                path_to_save = "{}{}_{}.dat".format(
-                               self.H5file.dir, self.H5file.filename, list_name[-1] )
-
-            dat_out = open(path_to_save, mode='w')
-            print("{} saving to: {}...".format( list_name[-1], path_to_save ))
-
-            col_length = len(list_name)
-            row_length = len(list_data_to_save[-1])
-            dat_out.write(("{:>20s}"*col_length+'\n').format(*tuple(list_name)))
-
-            for i in range(row_length) :
-                tuple_row = tuple( [data[i] for data in list_data_to_save] )
-                dat_out.write(("{:20.11E}"*col_length+'\n').format(*tuple_row))
-
-            dat_out.close()
-            print("file saved!")
-
-        def calc_ps(self, save=False, save_path=None) :
-            t_start = datetime.now()
-
+        def calc_ps(self, save=False, filename_out=None) :
+            t_start = datetime.now() # count the time
             small_mem = self.small_mem
+
             try :
                 self.ps_3D
                 print("3D power spectrum found!")
@@ -284,28 +297,29 @@ class H5file(object) :
             sum_power = np.sum(self.ps_3D)
 
             # some physical properties
-            dims = np.array(self.H5file.params['dims'])
+            dims = np.array(self.H5File.params['dims'])
             nx, ny, nz = dims
-            L = np.array(self.H5file.params['L'])
+            L = np.array(self.H5File.params['L'])
 
-            # calculate the wavenumber space
+            # calculate the wavenumbers
             # [-N, -(N-1), ..., -1, 0, 1, ..., N-2, N-1]
             kx_list = ( np.arange(-nx//2,nx//2,1) )/L[0]
             ky_list = ( np.arange(-ny//2,ny//2,1) )/L[1]
             kz_list = ( np.arange(-nz//2,nz//2,1) )/L[2]
 
-            # the wavenumber of the corresponding element of the 3D power spectrum
+            # the wavenumber array
             k_x, k_y, k_z = np.meshgrid(kx_list, ky_list, kz_list, indexing="ij")
             k = np.sqrt(k_x**2 + k_y**2 + k_z**2)
 
             # physical limits to the wavenumbers
             kmin = np.min(1.0/L)
             kmax = np.min(0.5*dims/L)
+
             # bins of wavenumbers
             # first bin = (0.5 to 1.5), second bin = (1.5 to 2.5), ...
             k_bins = np.arange(kmin, kmax, kmin) - 0.5*kmin
 
-            # calculate the power spectrum
+            # holder for the power spectrum
             ps_1D = np.zeros(len(k_bins))
 
             # sorting the power spectrum in the increasing order of wavenumber
@@ -332,10 +346,12 @@ class H5file(object) :
             print("completed!")
             print("time taken: {}".format(delta.total_seconds()))
 
-            if save == True :
-                dataset_name = self.dataname + "ps"
-                print("saving power spectrum to {}...".format(dataset_name))
-                self.save_to_dat([self.k,self.ps], ['k',dataset_name], path_to_save=save_path)
+            if save is True :
+                dataname_ps = self.dataname + "ps"
+                if filename_out is None :
+                    filename_out = self.H5File.filename + f"_{dataname_ps}.dat"
+                save_to_dat(filename_out,
+                            (self.k, 'k'), (self.ps, dataname_ps))
         # end def calc_ps
 
     class ScalarDataset(Dataset) :
@@ -345,34 +361,33 @@ class H5file(object) :
             container for a scalar field
 
         INPUTS
-            H5file
-                the outer class H5file
+            H5File
+                the outer class H5File
 
         VARIABLES
-            Dataset.H5file
+            Dataset.H5File
                 the outer class
             Dataset.data (np.array[N_x,N_y,N_z])
                 the raw field values
             Dataset.dataname (string)
                 the key to access the field in the hdf5 field
 
-            Dataset.ft (complex[k_x, k_y, k_z])     <== Dataset.calc_ft()
-                the three-dimensional complex fourier field of .data
             Dataset.ps_3D (float[k_x, k_y, k_z])     <== Dataset.calc_ps()
                 the three-dimensional power spectrum of .data
             Dataset.ps (np.array[k_max])            <== Dataset.calc_ps(calc_1D=True)
                 the one-dimensional power spectrum of .data
 
         METHODS
-
+            Dataset.calc_proj(axis={"x", "y", "z"})
+                replace the data with its projection
         ================================================================================
         """
 
-        def __init__(self, H5file, dataname, small_mem=False) :
-            self.H5file = H5file
+        def __init__(self, H5File, dataname, small_mem=False) :
+            self.H5File = H5File
             self.dataname = dataname
             self.small_mem = small_mem
-            self.data = sort(H5file, H5file.h5f[dataname])
+            self.data = sort_field(H5File, H5File.h5f[dataname])
 
         def calc_proj(self, axis) :
             if axis =='x' :
@@ -384,24 +399,26 @@ class H5file(object) :
             else :
                 print("axis input not set up properly!")
                 return
-
             self.data = np.sum(self.data, axis=axis_no)
 
-        def calc_ps_3D(self, save=False, save_path=None) :
+        def calc_ps_3D(self, save=False, filename_out=None) :
             t_start = datetime.now()
             small_mem=self.small_mem
 
             print("performing fast fourier transform...")
             rms_field = np.sqrt(np.average(self.data**2))
 
-            fft_object = pyfftw.builders.fftn(self.data)
-            self.ft = np.fft.fftshift(fft_object()) / np.product(self.H5file.params['dims'])
+            fft_object = pyfftw.builders.fftn(self.data, threads=16)
+            self.ft = np.fft.fftshift(fft_object()) / np.product(self.H5File.params['dims'])
 
             print("... fft completed!")
-
-            if small_mem==True : self.data = None
+            if small_mem is True :
+                self.data = None
 
             self.ps_3D = np.abs(self.ft)**2
+            if small_mem is True :
+                self.ft = None
+
             sum_power = np.sum(self.ps_3D)
             print("sum_power        : {}".format(sum_power))
             print("rms_squared_field: {}".format(rms_field**2))
@@ -410,9 +427,11 @@ class H5file(object) :
             delta = t_end - t_start
             print("time taken: {}".format(delta.total_seconds()))
 
-            if save == True :
-                dataset_name = self.dataname + "ps3d"
-                self.save_to_hdf5([self.ps_3D], [dataset_name], path_to_save=save_path)
+            if save is True :
+                dataname_ps = self.dataname + "ps3D"
+                if filename_out is None :
+                    filename_out = self.H5File.filename + f"_{dataname_ps}.hdf5"
+                save_to_hdf5(filename_out, (self.ps3D, dataname_ps))
 
     class DensityDataset(ScalarDataset) :
         """
@@ -439,11 +458,11 @@ class H5file(object) :
             super().__init__(H5file, 'dens', small_mem=small_mem)
 
         def set_log(self) :
-            self.data = np.log(self.data/self.mean())
+            self.data = np.log(self.data/np.mean(self.data))
 
         def set_delta(self) :
             self.set_log()
-            self.data = self.data - self.mean()
+            self.data = self.data - np.mean(self.data)
 
     class VectorDataset(Dataset) :
         """
@@ -452,8 +471,8 @@ class H5file(object) :
             container for a vector field of data
 
         INPUTS
-            H5file
-                the outer class H5file
+            H5File
+                the outer class H5File
             dataname (string)
                 the keyword of the dataset within the file without x,y,z suffixes
                     e.g. ['vel', 'mag']
@@ -475,8 +494,8 @@ class H5file(object) :
         ================================================================================
         """
 
-        def __init__(self, H5file, dataname, small_mem=False) :
-            self.H5file = H5file
+        def __init__(self, H5File, dataname, small_mem=False) :
+            self.H5File = H5File
             self.dataname = dataname
             self.small_mem = small_mem
             if small_mem :
@@ -484,40 +503,40 @@ class H5file(object) :
                 self.datay = None
                 self.dataz = None
             else :
-                self.datax = sort(H5file, H5file.h5f[dataname+'x'])
-                self.datay = sort(H5file, H5file.h5f[dataname+'y'])
-                self.dataz = sort(H5file, H5file.h5f[dataname+'z'])
+                self.datax = sort_field(H5File, H5File.h5f[dataname+'x'])
+                self.datay = sort_field(H5File, H5File.h5f[dataname+'y'])
+                self.dataz = sort_field(H5File, H5File.h5f[dataname+'z'])
 
-        def calc_ps_3D(self, save=False, save_path=None) :
+        def calc_ps_3D(self, save=False, filename_out=None) :
             t_start = datetime.now()
 
-            dims = np.array(self.H5file.params['dims'])
-            nx, ny, nz = dims
-
+            dims = np.array(self.H5File.params['dims'])
             ps_3D = np.zeros(dims)
             ms_field = 0.0
             gc.collect()
 
-            list_comp = [self.datax, self.datay, self.dataz]      # the vector components
-            list_name = [self.dataname+s for s in ['x','y','z']]  # the name of the components
-            for comp, comp_name in zip(list_comp, list_name) :
+            # the vector components and their names
+            datas = [self.datax, self.datay, self.dataz]
+            datanames = [self.dataname+s for s in ['x','y','z']]
+            for data, dataname in zip(datas, datanames) :
                 # begin loop over components
-                if comp is None :
+                if data is None :
                     print("loading the field...")
-                    comp = sort(self.H5file, self.H5file.h5f[comp_name])
+                    data = sort_field(self.H5File, self.H5File.h5f[comp_name])
                     print("field loaded!")
                 else :
                     print("field found within the dataset!")
 
-                ms_field += np.average(comp**2)
+                ms_field += np.average(data**2)
 
                 print("performing fast fourier transform...")
-                FF = np.fft.fftshift(pyfftw.interfaces.numpy_fft.fftn(comp)) / np.product(dims)
+                fft_object = pyfftw.builders.fftn(data, threads=16)
+                FF = np.fft.fftshift(fft_object()) / np.product(dims)
 
                 ps_3D += np.abs(FF)**2
                 print("completed!")
 
-                comp = None
+                data = None
                 gc.collect()
             # end loop over components
 
@@ -527,29 +546,29 @@ class H5file(object) :
             delta = t_end - t_start
             print("time taken: {}".format(delta.total_seconds()))
 
-            if save == True :
-                dataset_name = self.dataname + "3dps"
-                self.save_to_hdf5([self.ps_3D], [dataset_name], path_to_save=save_path)
+            if save is True :
+                dataname_ps = self.dataname + "ps3D"
+                if filename_out is None :
+                    filename_out = self.H5File.filename + f"_{dataname_ps}.hdf5"
+                save_to_hdf5(filename_out, (self.ps3D, dataname_ps))
         # end def calc_ps_3D
 
-class Partfile(object) :
+class PartFile(object) :
     """
     ================================================================================
     DESCRIPTION
         container for a FLASH particle file
 
     INPUTS
-        path (string)
-            the full path to the hdf5 file
+        filename (string)
+            the name of the hdf5 particle file
 
     VARIABLES
-        Partfile.dir (string)
-            the directory where the file is located
-        Partfile.filename (string)
-            the name of the hdf5 file
-        Partfile.h5f (h5py.File)
+        PartFile.filename (string)
+            the name of the hdf5 particle file
+        PartFile.h5f (h5py.File)
             the h5py File object
-        Partfile.params (dictionary)
+        PartFile.params (dictionary)
             the integer/real parameters/scalars from the file
 
     METHODS
@@ -557,11 +576,9 @@ class Partfile(object) :
     ================================================================================
     """
 
-    def __init__(self, path) :
-        self.dir, self.filename = os.path.split(path)
-        if self.dir is None :
-            self.dir = ''
-        self.h5f = h5py.File(path, 'r')
+    def __init__(self, filename) :
+        self.filename = filename
+        self.h5f = h5py.File(filename, 'r')
 
         int_params = read_parameters(self.h5f, 'integer runtime parameters')
         real_params = read_parameters(self.h5f, 'real runtime parameters')
@@ -569,38 +586,41 @@ class Partfile(object) :
         real_scalars = read_parameters(self.h5f, 'real scalars')
         self.params = dnam_tools.merge_dicts(int_params, real_params, int_scalars, real_scalars)
 
+        # read the particles (if exists)
         try :
             self.particles = self.read_parts()
         except KeyError :
             self.particles = None
 
-        nxb = self.params['nxb']
-        nyb = self.params['nyb']
-        nzb = self.params['nzb']
-        iprocs = self.params['iprocs']
-        jprocs = self.params['jprocs']
-        kprocs = self.params['kprocs']
-        self.params['dims'] = [nxb*iprocs, nyb*jprocs, nzb*kprocs]
+        # read the parameters
+        int_params = read_parameters(self.h5f, 'integer runtime parameters')
+        real_params = read_parameters(self.h5f, 'real runtime parameters')
+        int_scalars = read_parameters(self.h5f, 'integer scalars')
+        real_scalars = read_parameters(self.h5f, 'real scalars')
+        self.params = dnam_tools.merge_dicts(
+            int_params, real_params, int_scalars, real_scalars)
 
-        xmin = self.params['xmin']
-        xmax = self.params['xmax']
-        ymin = self.params['ymin']
-        ymax = self.params['ymax']
-        zmin = self.params['zmin']
-        zmax = self.params['zmax']
-        self.params['Lmin'] = [xmin, ymin, zmin]
-        self.params['Lmax'] = [xmax, ymax, zmax]
-        self.params['L'] = [xmax-xmin, ymax-ymin, zmax-zmin]
+        # calculate basic properties
+        # number of cells in each direction
+        self.params['dims'] = [self.params['nxb']*self.params['iprocs'],
+                               self.params['nyb']*self.params['jprocs'],
+                               self.params['nzb']*self.params['kprocs']]
+        # leftmost, rightmost coordinates of the simulation
+        Lmin = [self.params['xmin'], self.params['ymin'], self.params['zmin']]
+        Lmax = [self.params['xmax'], self.params['ymax'], self.params['zmax']]
+        self.params['Lmin'] = Lmin
+        self.params['Lmax'] = Lmax
+        # box size of the simulation
+        self.params['L'] = [max-min for max, min in zip(Lmax, Lmin)]
 
-        print("{} read!".format(path))
-        print("simulation time: {}".format(self.params['time']))
-        print("size           : {}".format(self.params['dims']))
-        print("domain         : {}".format(self.params['L']))
+        print(f"{filename} read!")
+        print(f"simulation time: {self.params['time']:.4E}")
+        print(f"resolution     : {self.params['dims']}")
+        print(f"domain         : {self.params['L']}")
         n_parts = 0 if self.particles is None else len(self.particles)
-        print("No. of parts   : {}".format(n_parts))
+        print(f"No. of parts   : {n_parts}")
 
     def read_parts(self) :
-
         # names of the particle parameters
         pnames = self.h5f['particle names']
         dtype = [(pname[0].decode("utf-8").rstrip(), 'f8') for pname in pnames]
@@ -608,7 +628,6 @@ class Partfile(object) :
         particles_raw = [tuple(p) for p in self.h5f['tracer particles']]
         particles = np.array(particles_raw, dtype=dtype)
         return particles
-
 
 if __name__== "__main__":
     """
@@ -621,9 +640,9 @@ if __name__== "__main__":
     import numpy as np
 
     parser = argparse.ArgumentParser(description='predefined macros for common tasks.')
-    parser.add_argument('path', type=str,
-                        help='the path to the file to be loaded')
-    parser.add_argument('field', type=str,
+    parser.add_argument('filename', type=str,
+                        help='the name to the file to be loaded')
+    parser.add_argument('fieldname', type=str,
                         help='name the field that will be analysed')
 
     parser.add_argument('--raw', action='store_true', default=False,
@@ -641,26 +660,17 @@ if __name__== "__main__":
     args = parser.parse_args()
 
     # load the file and create a dataset
-    a = H5file(args.path)
-    ds = a.new_dataset(args.field, small_mem=True)
+    a = H5File(args.filename)
+    ds = a.new_dataset(args.fieldname, small_mem=True)
 
     # print the raw field
     if args.raw :
-        print("saving the field: {}...".format(ds.dataname))
-        try :
-            ds.data
-        except AttributeError :
-            sys.exit("set a scalar field for this operation!")
-
-        ds.save_to_hdf5([ds.data], [ds.dataname], path_to_save=args.o)
+        pass
 
     # project the field
     if args.proj is not None:
-        print("calculating the projection of {} along {}...".format(ds.dataname, args.proj))
-        ds.calc_proj(args.proj)
-        ds.save_to_hdf5([ds.data], [ds.dataname+'_proj'+args.proj], path_to_save=args.o)
+        pass
 
     # calculate the 1D power spectrum
-    if args.ps1d == True :
-        ds.calc_ps(save=True, save_path=args.o)
-# endif main
+    if args.ps1d is True :
+        ds.calc_ps(save=True, filename_out=args.o)

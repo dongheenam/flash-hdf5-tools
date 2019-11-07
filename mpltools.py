@@ -412,7 +412,7 @@ if __name__ == "__main__" :
         i = path_name_only.find("plt_cnt")
         part_filename = path_name_only[:i]+'part'+path_name_only[i+7:i+12]
         try :
-            pf = h5tools.Partfile(part_filename)
+            pf = h5tools.PartFile(part_filename)
             part_exists = False if pf.particles is None else True
         except OSError :
             print(f"particle file {part_filename} not found...")
