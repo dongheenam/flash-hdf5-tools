@@ -1,0 +1,19 @@
+I have summarised commonly used variable names here for clarification!
+
+
+# FILES, PATHS
+filename	name of a specific file, including path	( /home/usr/example.dat )
+filepath	the path to the specific file ( /home/usr/ )
+
+*_in		for the input file
+*_out		for the output file
+
+
+# data
+data		generic name for an array-type set of numbers
+dataname	string name of the data
+
+_unsorted	unsorted set of numbers
+_sorted		sorted set of numbers
+
+# plotting
