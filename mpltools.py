@@ -14,9 +14,9 @@ import h5tools
 
 # constants
 class CST(object) :
-    def __init__(self) :
+    def __init__(self, dens_factor=1.0) :
         self.M_SOL = 1.989e33              # solar mass
-        self.M_TOT = 1 * 775 * self.M_SOL   # total mass
+        self.M_TOT = dens_factor * 775 * self.M_SOL   # total mass
 
         self.L = 2 * 3.086e18     # box length
         self.MACH = 5.0           # rms mach number
