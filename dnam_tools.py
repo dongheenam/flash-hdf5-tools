@@ -24,10 +24,14 @@ def get_file(path, loc='last') :
     """
     files = glob.glob(path)
     files.sort()
-    if loc == 'last' :
+    if files == [] :
+        return None
+    elif loc == 'last' :
         return files[-1]
     elif loc == 'first' :
         return files[0]
+    else :
+        return None
 
 """
 ================================================================================

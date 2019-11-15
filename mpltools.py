@@ -12,6 +12,20 @@ import matplotlib.gridspec as gridspec
 import numpy as np
 import h5tools
 
+# constants
+class CST(object) :
+    def __init__(self) :
+        self.M_SOL = 1.989e33              # solar mass
+        self.M_TOT = 1 * 775 * self.M_SOL   # total mass
+
+        self.L = 2 * 3.086e18     # box length
+        self.MACH = 5.0           # rms mach number
+        self.C_S = 0.2e5          # isothermal sound speed
+        self.T_TURB = self.L / (2*self.MACH*self.C_S) # turbulent crossing time
+
+        self.RHO = self.M_TOT / (self.L)**3       # mean density
+        self.T_FF = np.sqrt(3*np.pi/(32*6.674e-8*self.RHO)) # free-fall time
+
 def mpl_init() :
     """ loads predefined plotting parameters """
 
@@ -23,7 +37,8 @@ def mpl_init() :
     # text
     matplotlib.rcParams['text.usetex'] = True
     matplotlib.rcParams['text.latex.preamble'] = [r'\usepackage{amsmath}']
-    matplotlib.rc('font', **{'family': 'DejaVu Sans', 'weight':'normal', 'size': 18})
+    matplotlib.rcParams['font.family'] = "DejaVu Sans"
+    matplotlib.rcParams['font.size'] = 18
 
     # ticks and lines
     matplotlib.rcParams['xtick.major.size'] = 12
@@ -53,7 +68,7 @@ PLOTTER FUNCTIONS
 """
 def plot_1D(x, y,
     ax=plt.gca(), overplot=False, xrange=(None, None), yrange=(None, None),
-    xlabel=None, ylabel=None, title=None, annotation=None, log=(False, False),
+    xlabel=None, ylabel=None, title=None, annotation=None, log=False,
     fit=None, fit_range=None, **plot_kwargs) :
     """
     DESCRIPTION
@@ -92,11 +107,15 @@ def plot_1D(x, y,
     ax.plot(x, y, **plot_kwargs)
 
     if not overplot :
-        # set the log scale :
-        if log[0] is True :
+        # set the log scale
+        if log is True :
             ax.set_xscale("log")
-        if log[1] is True :
             ax.set_yscale("log")
+        else :
+            if log[0] is True :
+                ax.set_xscale("log")
+            if log[1] is True :
+                ax.set_yscale("log")
 
         # set the axes ranges
         ax.set_xlim(left=xrange[0], right=xrange[1])
@@ -150,7 +169,7 @@ def plot_1D(x, y,
 
 def plot_scatter(x, y,
     ax=plt.gca(), overplot=False, xrange=(None, None), yrange=(None, None),
-    xlabel=None, ylabel=None, title=None, annotation=None, log=(False, False),
+    xlabel=None, ylabel=None, title=None, annotation=None, log=False,
     fit=None, fit_range=None, **plot_kwargs) :
     """
     DESCRIPTION
@@ -190,10 +209,14 @@ def plot_scatter(x, y,
 
     if not overplot :
         # set the log scale :
-        if log[0] is True :
+        if log is True :
             ax.set_xscale("log")
-        if log[1] is True :
             ax.set_yscale("log")
+        else :
+            if log[0] is True :
+                ax.set_xscale("log")
+            if log[1] is True :
+                ax.set_yscale("log")
 
         # set the axes ranges
         ax.set_xlim(left=xrange[0], right=xrange[1])
@@ -243,6 +266,75 @@ def plot_scatter(x, y,
     # endif fit
     plt.tight_layout()
 # enddef plot_scatter
+
+def plot_hist(data,
+    ax=plt.gca(), overplot=False, xrange=(None, None), yrange=(None, None),
+    xlabel=None, ylabel=None, title=None, annotation=None, log=False,
+    **plot_kwargs) :
+    """
+    DESCRIPTION
+        Plots a single histogram atop the specified axis
+
+    INPUTS
+        data (array_like[N])
+            the data
+
+        ax (matplotlib.axes)
+            the axis the projection will be plotted on
+        overplot (boolean)
+            set this to True not to reinitialise the axes ranges and ticks
+        xrange, yrange (array_like[2])
+            [min, max] of the axes
+        xlabel, ylabel (str)
+            axes labels (to be passed on to ax.set_xlabel and ax.set_ylabel)
+        title (str)
+            plot title
+        annotation (str)
+            extra text to be displayed as anchored text
+
+        plot_kwargs (keyword arguments)
+            keyward arguments to be passed to matplotlib.axes.plot
+    """
+    from matplotlib.offsetbox import AnchoredText
+    from scipy.optimize import curve_fit
+
+    # plot the data
+    ax.hist(data, **plot_kwargs)
+
+    if not overplot :
+        # set the log scale :
+        if log is True :
+            ax.set_xscale("log")
+            ax.set_yscale("log")
+        else :
+            if log[0] is True :
+                ax.set_xscale("log")
+            if log[1] is True :
+                ax.set_yscale("log")
+
+        # set the axes ranges
+        ax.set_xlim(left=xrange[0], right=xrange[1])
+        ax.set_ylim(bottom=yrange[0], top=yrange[1])
+
+        # set the axes labels
+        if xlabel is not None :
+            ax.set_xlabel(xlabel)
+        if ylabel is not None :
+            ax.set_ylabel(ylabel)
+
+        # set title
+        if title is not None :
+            ax.set_title(title)
+
+        # annotation
+        if annotation is not None :
+            at = AnchoredText(annotation, loc='upper left', frameon=True)
+            at.patch.set_boxstyle("round,pad=0.,rounding_size=0.2")
+            ax.add_artist(at)
+    # endif not overplot
+
+    plt.tight_layout()
+# enddef plot_hist
 
 def plot_proj(proj, ax=plt.gca(), overplot=False,
               xrange=None, yrange=None, xlabel=None, ylabel=None,
@@ -322,7 +414,7 @@ def plot_proj(proj, ax=plt.gca(), overplot=False,
 
         # annotation
         if annotation is not None :
-            at = AnchoredText(annotation, loc='upper left', frameon=True)
+            at = AnchoredText(annotation, loc='upper left', frameon=False, prop={'color':'w'})
             at.patch.set_boxstyle("round,pad=0.,rounding_size=0.2")
             ax.add_artist(at)
 
@@ -352,13 +444,15 @@ if __name__ == "__main__" :
 
     # argument parsing
     parser = argparse.ArgumentParser(description='predefined macros for common tasks.')
-    parser.add_argument('path', type=str, nargs='+',
-                        help='the path to the file to be loaded')
+    parser.add_argument('filenames', type=str, nargs='+',
+                        help='the filenames to be loaded')
 
     parser.add_argument('--proj_mpi', action='store_true', default=False,
                         help='read the hdf5 file from projeciton_mpi and create a plot')
     parser.add_argument('--ps1d', action='store_true', default=False,
                         help='create a plot of the 1D power spectrum')
+    parser.add_argument('--imf', action='store_true', default=False,
+                        help='plot the IMF from the particle file')
 
     parser.add_argument('-o', type=str, default=None,
                         help='the output path')
@@ -366,7 +460,10 @@ if __name__ == "__main__" :
                         help='the extension for the output (ignored if -o is set up)')
 
     args = parser.parse_args()
-    path = args.path
+    filenames = args.filenames
+
+    # constants
+    cst = CST()
 
     # draws the 1d power spectrum
     if args.ps1d :
@@ -376,11 +473,11 @@ if __name__ == "__main__" :
         fig = plt.figure(figsize=(4,3.5))
         ax = fig.add_subplot(111)
 
-        for location, style in zip(path, styles) :
+        for location, style in zip(filenames, styles) :
             data = np.genfromtxt(location)
             x, y = data.T
 
-            overplot = False if location == path[0] else True
+            overplot = False if location == filenames[0] else True
             print("plotting {}...".format(location))
             plot_1D(x, y, ax=ax, overplot=overplot,
                     xrange=(1, 128), yrange=(1e6, 5e9), xlabel='$k$', ylabel='$P_v(k)$',
@@ -390,9 +487,9 @@ if __name__ == "__main__" :
 
         if args.o is None :
             if args.ext is None :
-                save_path = path[0][:-3] + 'png'
+                save_path = filenames[0][:-3] + 'png'
             else :
-                save_path = path[0][:-3] + args.ext
+                save_path = filenames[0][:-3] + args.ext
         else :
             save_path = args.o
         fig.savefig(save_path)
@@ -401,10 +498,10 @@ if __name__ == "__main__" :
 
     # draws the projeciton_mpi hdf5 file
     if args.proj_mpi :
-        print("plotting the projected field from {}...".format(path[0]))
-        h5f = h5py.File(path[0], 'r')
+        print("plotting the projected field from {}...".format(filenames[0]))
+        h5f = h5py.File(filenames[0], 'r')
 
-        path_name_only = path[0].split(".")[0]
+        path_name_only = filenames[0].split(".")[0]
         proj_axis = path_name_only[-1]
         proj_title = "_".join(path_name_only.split("_")[-3:-1])
 
@@ -447,29 +544,77 @@ if __name__ == "__main__" :
         fig = plt.figure(figsize=(8,7))
         ax = fig.add_subplot(111)
 
-        time_in_T = h5f['time'][0] / 3.086e13
-        time_in_Tff = h5f['time'][0] / 3.349e12
-        SFE = 100.0* np.sum(pf.particles['mass']) / 3.082e36 if part_exists else 0.0
+        time_in_T = pf.params['time'] / cst.T_TURB
+        time_in_Tff = pf.params['time'] / cst.T_FF
+        SFE = 100.0* np.sum(pf.particles['mass']) / cst.M_TOT if part_exists else 0.0
+        N_sink = len(pf.particles) if part_exists else 0
 
-        annotation = ( rf'$t={time_in_T:.1f}T = {time_in_Tff:.1f}T_\mathrm{{ff}}$'+'\n'
-                       rf'$\mathrm{{SFE}}={SFE:.1f}\%$' )
+        annotation = ( rf'\begin{{align*}}'
+                       rf'&t={time_in_T:.1f}T={time_in_Tff:.1f}T_\mathrm{{ff}}\\ '
+                       rf'&\mathrm{{SFE}}={SFE:.1f}\%\\ '
+                       rf'&N_\mathrm{{sink}}={N_sink} \end{{align*}}' )
         plot_proj(dens_proj, ax=ax,
                   xrange=xrange, yrange=yrange, xlabel=xlabel, ylabel=ylabel,
-                  title=r'$\beta=1, \rho=2\rho_0$', annotation=annotation,
+                  title=r'$\beta=1, \rho=2\rho_0, N=1024^3$', annotation=annotation,
                   colorbar_title=r"Column Density $[\mathrm{g}\,\mathrm{cm}^{-2}]$",
-                  colorbar=True, log=True, color_range=(0.01,0.3))
+                  colorbar=True, log=True, color_range=(0.01,0.5))
 
         plot_scatter(part_ylocs, part_xlocs, ax=ax, xrange=xrange, yrange=yrange,
-                     overplot=True, marker='o', color='greenyellow')
+                     overplot=True, marker=r'$\odot$', s=80, color='limegreen')
 
-        if args.o is None :
-            if args.ext is None :
-                save_path = path_name_only + '.png'
-            else :
-                save_path = path_name_only + '.' + args.ext
-        else :
+        if args.o is not None :
             save_path = args.o
+        elif args.ext is not None :
+            save_path = path_name_only + '.' + args.ext
+        else :
+            save_path = path_name_pnly + '.png'
 
         fig.savefig(save_path)
         print("plot saved to: {}".format(save_path))
     # endif args.proj_mpi
+
+    if args.imf :
+        print(f"plotting the imf for {filenames[0]}...")
+        # load the particle masses
+        pf = h5tools.PartFile(filenames[0])
+        if pf.particles is not None :
+            masses_in_msol = pf.particles['mass'] / cst.M_SOL
+            part_exists = True
+        else :
+            masses_in_msol = []
+            part_exists = False
+
+        # set up the bins
+        m_min = 0.5         # in solar masses
+        m_max = 100
+        n_bins = 20
+        logbins = np.logspace(np.log10(m_min),np.log10(m_max),n_bins)
+
+        # annotation of the plot
+        time_in_T = pf.params['time'] / cst.T_TURB
+        time_in_Tff = pf.params['time'] / cst.T_FF
+        SFE = 100.0* np.sum(pf.particles['mass']) / cst.M_TOT if part_exists else 0.0
+        N_sink = len(pf.particles) if part_exists else 0
+        annotation = ( rf'\begin{{align*}}'
+                       rf'&t={time_in_T:.1f}T={time_in_Tff:.1f}T_\mathrm{{ff}}\\ '
+                       rf'&\mathrm{{SFE}}={SFE:.1f}\%\\ '
+                       rf'&N_\mathrm{{sink}}={N_sink} \end{{align*}}' )
+        # plot the IMF
+        mpl_init()
+        fig = plt.figure(figsize=(8,7))
+        ax = fig.add_subplot(111)
+        plot_hist(masses_in_msol, ax=ax, log=True, yrange=(0.5, 10),
+            annotation=annotation, title=r'$\beta=2, \rho=\rho_0, N=1024^3$',
+            xlabel=r'$M\,[M_\odot]$', ylabel=r'$\dfrac{dN}{d\log{M}}$',
+            bins=logbins, histtype='step', color='black', linewidth=2)
+
+        # export the plot
+        if args.o is not None :
+            filename_out = args.o
+        elif args.ext is not None :
+            filename_out = filenames[0] + '_imf.' + args.ext
+        else :
+            filename_out = filenames[0] + '_imf.png'
+        plt.savefig(filename_out)
+        print("plot saved to: {}".format(filename_out))
+    # endif args.imf
