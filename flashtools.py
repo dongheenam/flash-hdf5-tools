@@ -11,34 +11,33 @@ import tempfile
 import dnam_tools, h5tools
 
 """ PARAMETERS - forcing generator """
-forcing_generator_path = "/short/ek9/dn8909/forcing_generator/"
+PATH_FORCING_GEN = "/short/ek9/dn8909/forcing_generator/"
 
-st_power_law_exp = "-2.0"
-velocity = "1.0e5"
-st_energy = "0.9e-2 * velocity**3/L"
-st_stirmax = "(256+eps) * twopi/L"
+ST_POWER_LAW_EXP = "-2.0"
+VELOCITY = "1.0e5"
+ST_ENERGY = "0.9e-2 * velocity**3/L"
+ST_STIRMAX = "(256+eps) * twopi/L"
 
 """ PARAMETERS - FLASH """
-flash_path = "/short/ek9/dn8909/flash4.0.1-rsaa_fork/"
-output_path = "/short/ek9/dn8909/data/"
+PATH_FLASH = "/short/ek9/dn8909/flash4.0.1-rsaa_fork/"
+PATH_DATA = "/short/ek9/dn8909/data/"
+FLASH_EXE = "flash4_grav"
 
-res_dens_factor = 1.0
+RES_DENS_FACTOR = 0.5
 
 """ PARAMETERS - QSUB """
-project = "jh2"
-queue = "normal"
-walltime = "10:00:00"
-ncpus = 512
-mem = f"{ncpus * 2}GB"
-job_name = "beta2"
+PROJECT = "jh2"
+QUEUE = "normal"
+WALLTIME = "10:00:00"
+NCPUS = 512
+MEM = f"{NCPUS * 2}GB"
+NAME_JOB = "b2_1402s"
 
 """
 ================================================================================
 TASK FUNCTIONS
 ================================================================================
 """
-
-
 def replace_file(filename, begin_at=0, comment_symbol='#', **kwargs):
     """
     DESCRIPTION
@@ -63,9 +62,9 @@ def replace_file(filename, begin_at=0, comment_symbol='#', **kwargs):
                     i_start = line.find("=")  # replace from one space after the equal sign
                     i_end = line.find(comment_symbol)  # until the comment starts (if found)
                     if i_end is -1:
-                        line = line[:i_start + 1] + " {}".format(value) + "\n"
+                        line = line[:i_start+1]+" {}".format(value)+"\n"
                     else:
-                        line = line[:i_start + 1] + " {0:<{1}}".format(value, i_end - i_start - 2) + line[i_end:]
+                        line = line[:i_start+1]+" {0:<{1}}".format(value,i_end-i_start-2)+line[i_end:]
                     print(f"(line {line_no}) =>     {line.rstrip()}")
                     break
             # endfor kwargs.items()
@@ -92,17 +91,17 @@ def generate_forcingfile(seed=140281):
     """
     print(f"making the forcingfile with seed : {seed}...")
     # update the Fortran code
-    replace_file(forcing_generator_path + "forcing_generator.F90", begin_at=623, comment_symbol='!',
-                 st_power_law_exp=st_power_law_exp,
-                 velocity=velocity,
-                 st_energy=st_energy,
-                 st_stirmax=st_stirmax,
+    replace_file(PATH_FORCING_GEN + "forcing_generator.F90", begin_at=623, comment_symbol='!',
+                 st_power_law_exp=ST_POWER_LAW_EXP,
+                 velocity=VELOCITY,
+                 st_energy=ST_ENERGY,
+                 st_stirmax=ST_STIRMAX,
                  st_seed=seed)
 
     # make the forcing generator and run
     print("making and running the forcing generator...")
-    cp = subprocess.run(["make", "-C", forcing_generator_path], capture_output=True, check=True)
-    fg_name = os.path.join(forcing_generator_path, "forcing_generator")
+    cp = subprocess.run(["make", "-C", PATH_FORCING_GEN], capture_output=True, check=True)
+    fg_name = os.path.join(PATH_FORCING_GEN, "forcing_generator")
     cp = subprocess.run(fg_name, capture_output=True, check=True, text=True)
 
     # the last line of the stdout contains the name of the forcing file
@@ -113,15 +112,15 @@ def generate_forcingfile(seed=140281):
     return forcingfile_name
 
 
-def submit_job(project=project, queue=queue, walltime=walltime, ncpus=ncpus, mem=mem, dir="",
-               action="", script_name="job.sh", job_name="test", previous_job=None):
+def submit_job(project=PROJECT, queue=QUEUE, walltime=WALLTIME, ncpus=NCPUS, mem=MEM, dir="",
+               action="", script_name="job.sh", job_name="test", prev_job_id=None):
     """
     DESCRIPTION
         writes a pbs script and submit the job and returns the job name
     """
-    jobscript_path = os.path.join(dir, script_name)
-    print("writing jobscript to {}...".format(jobscript_path))
-    job = open(jobscript_path, 'w')
+    path_jobscript = os.path.join(dir, script_name)
+    print("writing jobscript to {}...".format(path_jobscript))
+    job = open(path_jobscript, 'w')
 
     job.write("#!/bin/bash \n")
     job.write(f"#PBS -P {project} \n")
@@ -132,15 +131,15 @@ def submit_job(project=project, queue=queue, walltime=walltime, ncpus=ncpus, mem
     job.write("#PBS -l wd \n")
     job.write(f"#PBS -N {job_name} \n")
     job.write("#PBS -j oe \n")
-    if previous_job is not None:
-        job.write(f"#PBS -W depend=afterany:{previous_job} \n")
+    if prev_job_id is not None:
+        job.write(f"#PBS -W depend=afterany:{prev_job_id} \n")
 
     for line in action.split("\n"):
         job.write(line + "\n")
     job.close()
 
     print("submitting...")
-    cp = subprocess.run(["qsub", jobscript_path], capture_output=True, check=True, text=True)
+    cp = subprocess.run(["qsub", path_jobscript], capture_output=True, check=True, text=True)
     job_id = cp.stdout.split()[-1]
 
     print(f"completed! job id: {job_id}")
@@ -152,19 +151,17 @@ def submit_job(project=project, queue=queue, walltime=walltime, ncpus=ncpus, mem
 MACRO FUNCTIONS
 ================================================================================
 """
-
-
 def first_sim(original_dir, seed=140281, depend=None):
     """
     generate the forcing file and submit the driving phase simulation
     """
     # full path to flash4 file and flash.par
-    flash_exe_path = os.path.join(original_dir, "flash4")
-    flash_par_path = os.path.join(original_dir, "flash.par")
+    path_flash_exe = os.path.join(original_dir, "flash4")
+    path_flash_par = os.path.join(original_dir, "flash.par")
 
     # check whether all necessary files exist
-    flash_exists = os.path.exists(flash_exe_path)
-    flash_par_exists = os.path.exists(flash_par_path)
+    flash_exists = os.path.exists(path_flash_exe)
+    flash_par_exists = os.path.exists(path_flash_par)
     if (not flash_exists) or (not flash_par_exists):
         sys.exit("flash files not found! check the directory again.")
 
@@ -174,12 +171,12 @@ def first_sim(original_dir, seed=140281, depend=None):
     # create the directory and copy the flash files
     new_dir = f"{original_dir}_{seed:06d}/"
     os.mkdir(new_dir)
-    shutil.copy2(flash_exe_path, new_dir)
-    shutil.copy2(flash_par_path, new_dir)
+    shutil.copy2(path_flash_exe, new_dir)
+    shutil.copy2(path_flash_par, new_dir)
 
     # modify the flash.par file
-    new_flash_par_path = os.path.join(new_dir, "flash.par")
-    replace_file(new_flash_par_path,
+    flash_par_new = os.path.join(new_dir, "flash.par")
+    replace_file(flash_par_new,
                  st_infilename=f'"../{forcingfile_name}"',
                  useGravity='.false.',
                  useParticles='.false.',
@@ -196,9 +193,9 @@ def first_sim(original_dir, seed=140281, depend=None):
     # submit the simulation
     stdout = "shell.out"
     action = f"cd {new_dir} \nmpirun flash4 1>{stdout} 2>&1"
-    job_id = submit_job(project=project, queue=queue, walltime=walltime,
-                        ncpus=ncpus, mem=mem, dir=new_dir, action=action,
-                        script_name="job.sh", job_name=job_name+f"_{seed}", previous_job=depend)
+    job_id = submit_job(project=PROJECT, queue=QUEUE, walltime=WALLTIME,
+                        ncpus=NCPUS, mem=MEM, dir=new_dir, action=action,
+                        script_name="job.sh", job_name=NAME_JOB+f"_{seed}", prev_job_id=depend)
     return job_id
 
 
@@ -208,43 +205,43 @@ def restart_grav1(original_dir, seed=140281, depend=None):
     for the re-initialisation required for turning on the gravity
     """
     # full path to flash4 file and flash.par
-    flash_exe_path = os.path.join(original_dir + "_sink", "flash4_grav")
+    path_flash_exe = os.path.join(original_dir, "flash4_grav")
 
     # full path to the turbulence-only simulation
-    turb_sim_path = f"{original_dir}_{seed:06d}/"
-    flash_par_path = os.path.join(turb_sim_path, "flash.par")
+    path_turb_sim = f"{original_dir}_{seed:06d}/"
+    path_flash_par = os.path.join(path_turb_sim, "flash.par")
 
     # check whether all necessary files and directories exist
-    flash_exists = os.path.exists(flash_exe_path)
-    flash_par_exists = os.path.exists(flash_par_path)
-    turb_sim_exists = os.path.exists(turb_sim_path)
+    flash_exists = os.path.exists(path_flash_exe)
+    flash_par_exists = os.path.exists(path_flash_par)
+    turb_sim_exists = os.path.exists(path_turb_sim)
     if (not flash_exists):
-        sys.exit(f"{flash_exe_path} does not exist")
+        sys.exit(f"{path_flash_exe} does not exist")
     elif not turb_sim_exists:
-        sys.exit(f"{turb_sim_path} does not exist")
+        sys.exit(f"{path_turb_sim} does not exist")
     elif not flash_par_exists:
-        sys.exit(f"{flash_par_path} does not exist")
+        sys.exit(f"{path_flash_par} does not exist")
 
     # create the directory for the sink simulation
     new_dir = f"{original_dir}_{seed:06d}_sink/"
     os.mkdir(new_dir)
     # copy the flash executable and flash.par
-    shutil.copy2(flash_exe_path, new_dir)
-    shutil.copy2(flash_par_path, new_dir)
+    shutil.copy2(path_flash_exe, new_dir)
+    shutil.copy2(path_flash_par, new_dir)
 
     # find the last checkfile and create a symbolic link
-    chkfiles = os.path.join(os.getcwd(), turb_sim_path, "Turb_hdf5_chk_????")
-    last_chkfile = dnam_tools.get_file(chkfiles, loc='last')
-    link_last_chkfile = os.path.join(new_dir, os.path.split(last_chkfile)[1])
-    cp = subprocess.run(["ln", "-s", last_chkfile, link_last_chkfile], capture_output=True, check=True, text=True)
-    print(f"checkfile link created at: {link_last_chkfile}")
+    chkfiles = os.path.join(os.getcwd(), path_turb_sim, "Turb_hdf5_chk_????")
+    chkfile_last = dnam_tools.get_file(chkfiles, loc='last')
+    link_chkfile_last = os.path.join(new_dir, os.path.split(chkfile_last)[1])
+    cp = subprocess.run(["ln", "-s", chkfile_last, link_chkfile_last], capture_output=True, check=True, text=True)
+    print(f"checkfile link created at: {link_chkfile_last}")
 
     # read the last checkfile
-    h5t = h5tools.H5File(last_chkfile)
+    h5t = h5tools.H5File(chkfile_last)
 
     # modify the flash.par file
-    new_flash_par_path = os.path.join(new_dir, "flash.par")
-    replace_file(new_flash_par_path,
+    flash_par_new = os.path.join(new_dir, "flash.par")
+    replace_file(flash_par_new,
                  useGravity=".false.",
                  useParticles=".false.",
                  restart=".true.",
@@ -255,15 +252,15 @@ def restart_grav1(original_dir, seed=140281, depend=None):
                  tmax="3.086e14",
                  usePolytrope=".true.",
                  res_rescale_dens=".true.",
-                 res_dens_factor=res_dens_factor
+                 res_dens_factor=RES_DENS_FACTOR
                  )
 
     # submit the simulation
     stdout = "shell.out.init"
     action = f"cd {new_dir} \nmpirun flash4_grav 1>{stdout} 2>&1"
-    job_id = submit_job(project=project, queue=queue, walltime="02:00:00",
-                        ncpus=ncpus, mem=mem, dir=new_dir, action=action,
-                        script_name="job.sh.init", job_name=f"grav_restart_{seed}", previous_job=depend)
+    job_id = submit_job(project=PROJECT, queue=QUEUE, walltime="02:00:00",
+                        ncpus=NCPUS, mem=MEM, dir=new_dir, action=action,
+                        script_name="job.sh.init", job_name=f"grav_restart_{seed}", prev_job_id=depend)
     return job_id
 
 
@@ -281,14 +278,14 @@ def restart_grav2(original_dir, seed=140281, depend=None):
 
     # find the last checkfile
     chkfiles = os.path.join(new_dir, "Turb_hdf5_chk_????")
-    last_chkfile = dnam_tools.get_file(chkfiles, loc='last')
+    chkfile_last = dnam_tools.get_file(chkfiles, loc='last')
 
     # read the last checkfile
-    h5t = h5tools.H5File(last_chkfile)
+    h5t = h5tools.H5File(chkfile_last)
 
     # modify the flash.par file
-    new_flash_par_path = os.path.join(new_dir, "flash.par")
-    replace_file(new_flash_par_path,
+    flash_par_new = os.path.join(new_dir, "flash.par")
+    replace_file(flash_par_new,
                  useGravity=".true.",
                  useParticles=".true.",
                  restart=".true.",
@@ -307,11 +304,41 @@ def restart_grav2(original_dir, seed=140281, depend=None):
     # submit the simulation
     stdout = "shell.out.init2"
     action = f"cd {new_dir} \nmpirun flash4_grav 1>{stdout} 2>&1"
-    job_id = submit_job(project=project, queue=queue, walltime=walltime,
-                        ncpus=ncpus, mem=mem, dir=new_dir, action=action,
-                        script_name="job.sh.init2", job_name=job_name+f"_{seed}", previous_job=depend)
+    job_id = submit_job(project=PROJECT, queue=QUEUE, walltime=WALLTIME,
+                        ncpus=NCPUS, mem=MEM, dir=new_dir, action=action,
+                        script_name="job.sh.init2", job_name=NAME_JOB+f"_{seed}", prev_job_id=depend)
     return job_id
 
+def restart(original_dir, n_jobs, depend=None, flash_name=FLASH_EXE) :
+    """
+    submit the jobs multiple times for easier restart
+    """
+    print(f"initialising {n_jobs} restarts at {original_dir}...")
+    # check if job.sh exists already
+    jobshs = os.path.join(original_dir, "job[0-9]*.sh")
+    jobsh_last = dnam_tools.get_file(jobshs,loc='last')
+    if (jobsh_last is not None) and (jobsh_last != "job.sh") :
+        # extract the number in the filename
+        i_last = int( ''.join([c for c in jobsh_last if c.isdigit()]) )
+        print(f"{jobsh_last} found!")
+    else :
+        i_last = 0
+
+    # repeat for the number of jobs
+    prev_job_id = depend
+    for i in range(i_last+1, n_jobs+i_last+1) :
+        script_name = f"job{i}.sh"
+        stdout = f"shell.out{i:02d}"
+        action = ( f"cd {original_dir}\n"
+                    "prep_restart.py -auto\n"
+                   f"mpirun {FLASH_EXE} 1>{stdout} 2>&1" )
+        job_name = NAME_JOB + f"_{i}"
+        prev_job_id = submit_job(
+            project=PROJECT, queue=QUEUE, walltime=WALLTIME, ncpus=NCPUS,
+            mem=MEM, dir=original_dir, action=action, script_name=script_name,
+            job_name=job_name, prev_job_id=prev_job_id)
+
+    print("exiting flashtools.py...")
 
 """
 ================================================================================
@@ -325,6 +352,9 @@ if __name__ == "__main__":
                         help='the directory to flash exec and flash.par')
     parser.add_argument('-seed', type=int, default=140281,
                         help='the random seed for the forcing file')
+
+    parser.add_argument('-restart', type=int, default=0,
+                        help='submit the restarts')
 
     parser.add_argument('--first', action='store_true', default=False,
                         help=('generate the forcing file and'
@@ -352,6 +382,10 @@ if __name__ == "__main__":
     if args.first:
         first_sim(original_dir, seed=args.seed, depend=args.depend)
 
+    # restart using prep_restart.py
+    if args.restart != 0:
+        restart(original_dir, args.restart, depend=args.depend, flash_name=FLASH_EXE)
+
     # first restart for the sink simulation
     if args.res_grav1:
         restart_grav1(original_dir, seed=args.seed, depend=args.depend)
@@ -370,7 +404,7 @@ if __name__ == "__main__":
         stdout = "shell.out.flashtools"
         action = (f"cd {cwd} \nflashtools.py {original_dir}"
                   f" -seed {args.seed} --res_grav2 1>{stdout} 2>&1")
-        submit_job(project=project, queue=queue, walltime="00:15:00",
+        submit_job(project=PROJECT, queue=QUEUE, walltime="00:15:00",
                    ncpus=2, mem="4GB", dir=cwd, action=action,
-                   script_name="job.sh.flashtools", job_name="test",
-                   previous_job=job_id)
+                   script_name="job.sh.flashtools", job_name="res",
+                   prev_job_id=job_id)
