@@ -7,30 +7,20 @@ import sys
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
+import h5py
 
 import h5tools
 import mpltools
-
-# constants
-class CST(object) :
-    def __init__(self) :
-        self.M_SOL = 1.989e33              # solar mass
-        self.M_TOT = 2 * 775 * self.M_SOL   # total mass
-
-        self.L = 2 * 3.086e18     # box length
-        self.MACH = 5.0           # rms mach number
-        self.C_S = 0.2e5          # isothermal sound speed
-        self.T_TURB = self.L / (2*self.MACH*self.C_S) # turbulent crossing time
-
-        self.RHO = self.M_TOT / (self.L)**3       # mean density
-        self.T_FF = np.sqrt(3*np.pi/(32*6.674e-8*self.RHO)) # free-fall time
+from constants import *
 
 if __name__ == "__main__" :
 
     parser = argparse.ArgumentParser(description='predefined macros for common tasks.')
-    parser.add_argument('filename', type=str,
-                        help='the name to the file to be loaded')
+    parser.add_argument('filenames', type=str, nargs='+',
+                        help='the name to the file(s) to be loaded')
 
+    parser.add_argument('--proj_mpi', action='store_true', default=False,
+                        help='read the hdf5 file from projeciton_mpi and create a plot')
     parser.add_argument('--imf', action='store_true', default=False,
                         help='Set this flag to plot the IMF from the particle file')
 
@@ -40,12 +30,101 @@ if __name__ == "__main__" :
                         help='the extension for the output (ignored if -o is set up)')
 
     args = parser.parse_args()
+    if len(args.filenames) == 1 :
+        args.filename = args.filenames[0]
 
-    # container for the constants
-    cst = CST()
+    if args.proj_mpi :
+        print(f"plotting the projected field from {args.filename}...")
+        h5f = h5py.File(args.filename, 'r')
 
-    if args.imf is True :
+        filename_wo_ext = args.filename.split(".")[0]
+        proj_axis = filename_wo_ext[-1]
+        proj_title = "_".join(filename_wo_ext.split("_")[-3:-1])
+        filename_plt = "_".join(filename_wo_ext.split("_")[:-3])
+
+        # find for a particle file assiciated with the proj_mpi result
+        i = filename_wo_ext.find("plt_cnt")
+        filename_part = filename_wo_ext[:i]+'part'+filename_wo_ext[i+7:i+12]
+        try :
+            pf = h5tools.PartFile(filename_part)
+            part_exists = False if pf.particles is None else True
+
+            # container for the constants
+            cst = CST(H5File=pf)
+        except OSError :
+            print(f"particle file {part_filename} not found...")
+            part_exists = False
+
+            # container for the constants
+            cst = CST(filename=filename_plt)
+
+        dens_proj = h5f[proj_title]
+        xyz_lim = np.array(h5f['minmax_xyz']) / 3.086e18
+
+        if proj_axis == 'x' :
+            xlabel, ylabel = (r'$y \,[\mathrm{pc}]$', r'$z \,[\mathrm{pc}]$')
+            xrange, yrange = (xyz_lim[1], xyz_lim[2])
+            if part_exists :
+                part_xlocs = pf.particles['posy'] / 3.086e18
+                part_ylocs = pf.particles['posz'] / 3.086e18
+        elif proj_axis == 'y' :
+            xlabel, ylabel = (r'$x \,[\mathrm{pc}]$', r'$z \,[\mathrm{pc}]$')
+            xrange, yrange = (xyz_lim[0], xyz_lim[2])
+            if part_exists :
+                part_xlocs = pf.particles['posx'] / 3.086e18
+                part_ylocs = pf.particles['posz'] / 3.086e18
+        elif proj_axis == 'z' :
+            xlabel, ylabel = (r'$x \,[\mathrm{pc}]$', r'$y \,[\mathrm{pc}]$')
+            xrange, yrange = (xyz_lim[0], xyz_lim[1])
+            if part_exists :
+                part_xlocs = pf.particles['posx'] / 3.086e18
+                part_ylocs = pf.particles['posy'] / 3.086e18
+
+        if not part_exists :
+            part_xlocs = []
+            part_ylocs = []
+
+        # plotting
+        print("plotting...")
+        mpltools.mpl_init()
+        fig = plt.figure(figsize=(8,7))
+        ax = fig.add_subplot(111)
+
+        time_in_T = pf.params['time'] / cst.T_TURB
+        time_in_Tff = pf.params['time'] / cst.T_FF
+        SFE = 100.0* np.sum(pf.particles['mass']) / cst.M_TOT if part_exists else 0.0
+        N_sink = len(pf.particles) if part_exists else 0
+
+        annotation = ( rf'\begin{{align*}}'
+                       rf'&t={time_in_T:.1f}T={time_in_Tff:.1f}T_\mathrm{{ff}}\\ '
+                       rf'&\mathrm{{SFE}}={SFE:.1f}\%\\ '
+                       rf'&N_\mathrm{{sink}}={N_sink} \end{{align*}}' )
+        mpltools.plot_proj(dens_proj, ax=ax,
+            xrange=xrange, yrange=yrange, xlabel=xlabel, ylabel=ylabel,
+            title=r'$\beta=1, \rho=\rho_0, N=1024^3$', annotation=annotation,
+            colorbar_title=r"Column Density $[\mathrm{g}\,\mathrm{cm}^{-2}]$",
+            colorbar=True, log=True, color_range=(0.01,0.5))
+
+        mpltools.plot_scatter(part_ylocs, part_xlocs, ax=ax,
+            xrange=xrange, yrange=yrange,
+            overplot=True, marker=r'$\odot$', s=80, color='limegreen')
+
+        if args.o is not None :
+            filename_out = args.o
+        elif args.ext is not None :
+            filename_out = filename_wo_ext + '.' + args.ext
+        else :
+            filename_out = filename_wo_ext + '.png'
+
+        fig.savefig(filename_out)
+        print(f"plot saved to: {filename_out}")
+    #endif args.proj_mpi
+
+    if args.imf :
         print(f"plotting the imf for {args.filename}...")
+        # container for the constants
+        cst = CST(filename=args.filename)
+
         # load the particle masses
         pf = h5tools.PartFile(args.filename)
         if pf.particles is not None :

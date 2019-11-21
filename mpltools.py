@@ -12,20 +12,6 @@ import matplotlib.gridspec as gridspec
 import numpy as np
 import h5tools
 
-# constants
-class CST(object) :
-    def __init__(self, dens_factor=1.0) :
-        self.M_SOL = 1.989e33              # solar mass
-        self.M_TOT = dens_factor * 775 * self.M_SOL   # total mass
-
-        self.L = 2 * 3.086e18     # box length
-        self.MACH = 5.0           # rms mach number
-        self.C_S = 0.2e5          # isothermal sound speed
-        self.T_TURB = self.L / (2*self.MACH*self.C_S) # turbulent crossing time
-
-        self.RHO = self.M_TOT / (self.L)**3       # mean density
-        self.T_FF = np.sqrt(3*np.pi/(32*6.674e-8*self.RHO)) # free-fall time
-
 def mpl_init() :
     """ loads predefined plotting parameters """
 

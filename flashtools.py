@@ -11,27 +11,29 @@ import tempfile
 import dnam_tools, h5tools
 
 """ PARAMETERS - forcing generator """
-PATH_FORCING_GEN = "/short/ek9/dn8909/forcing_generator/"
+PATH_FORCING_GEN = "/home/100/dn8909/source/forcing_generator/"
 
 ST_POWER_LAW_EXP = "-2.0"
 VELOCITY = "1.0e5"
-ST_ENERGY = "0.9e-2 * velocity**3/L"
-ST_STIRMAX = "(256+eps) * twopi/L"
+ST_ENERGY = "0.9e-2 * velocity**3/L" # for beta=1
+#ST_ENERGY = "2.1e-2 * velocity**3/L" # for beta=2 (use 1.7e-2)
+ST_STIRMAX = "(64+eps) * twopi/L"
 
 """ PARAMETERS - FLASH """
 PATH_FLASH = "/short/ek9/dn8909/flash4.0.1-rsaa_fork/"
 PATH_DATA = "/short/ek9/dn8909/data/"
 FLASH_EXE = "flash4_grav"
 
-RES_DENS_FACTOR = 0.5
+RHO_0 = 6.56e-21
+RES_DENS_FACTOR = 0.625
 
 """ PARAMETERS - QSUB """
 PROJECT = "jh2"
-QUEUE = "normal"
-WALLTIME = "10:00:00"
+QUEUE = "express"
+WALLTIME = "04:00:00"
 NCPUS = 512
 MEM = f"{NCPUS * 2}GB"
-NAME_JOB = "b2_1402s"
+NAME_JOB = "b2_test"
 
 """
 ================================================================================
@@ -40,7 +42,7 @@ TASK FUNCTIONS
 """
 def replace_file(filename, begin_at=0, comment_symbol='#', **kwargs):
     """
-    DESCRIPTION
+   DESCRIPTION
         finds the parameters in kwargs and replace its value as specified in kwargs
     """
 
@@ -192,7 +194,7 @@ def first_sim(original_dir, seed=140281, depend=None):
 
     # submit the simulation
     stdout = "shell.out"
-    action = f"cd {new_dir} \nmpirun flash4 1>{stdout} 2>&1"
+    action = f"cd {new_dir} \nmpirun -np {NCPUS} flash4 1>{stdout} 2>&1"
     job_id = submit_job(project=PROJECT, queue=QUEUE, walltime=WALLTIME,
                         ncpus=NCPUS, mem=MEM, dir=new_dir, action=action,
                         script_name="job.sh", job_name=NAME_JOB+f"_{seed}", prev_job_id=depend)
@@ -252,12 +254,13 @@ def restart_grav1(original_dir, seed=140281, depend=None):
                  tmax="3.086e14",
                  usePolytrope=".true.",
                  res_rescale_dens=".true.",
-                 res_dens_factor=RES_DENS_FACTOR
+                 res_dens_factor=RES_DENS_FACTOR,
+                 rho_ambient=RHO_0*RES_DENS_FACTOR
                  )
 
     # submit the simulation
     stdout = "shell.out.init"
-    action = f"cd {new_dir} \nmpirun flash4_grav 1>{stdout} 2>&1"
+    action = f"cd {new_dir} \nmpirun -np {NCPUS} flash4_grav 1>{stdout} 2>&1"
     job_id = submit_job(project=PROJECT, queue=QUEUE, walltime="02:00:00",
                         ncpus=NCPUS, mem=MEM, dir=new_dir, action=action,
                         script_name="job.sh.init", job_name=f"grav_restart_{seed}", prev_job_id=depend)
@@ -303,7 +306,7 @@ def restart_grav2(original_dir, seed=140281, depend=None):
 
     # submit the simulation
     stdout = "shell.out.init2"
-    action = f"cd {new_dir} \nmpirun flash4_grav 1>{stdout} 2>&1"
+    action = f"cd {new_dir} \nmpirun -np {NCPUS} flash4_grav 1>{stdout} 2>&1"
     job_id = submit_job(project=PROJECT, queue=QUEUE, walltime=WALLTIME,
                         ncpus=NCPUS, mem=MEM, dir=new_dir, action=action,
                         script_name="job.sh.init2", job_name=NAME_JOB+f"_{seed}", prev_job_id=depend)
@@ -319,7 +322,8 @@ def restart(original_dir, n_jobs, depend=None, flash_name=FLASH_EXE) :
     jobsh_last = dnam_tools.get_file(jobshs,loc='last')
     if (jobsh_last is not None) and (jobsh_last != "job.sh") :
         # extract the number in the filename
-        i_last = int( ''.join([c for c in jobsh_last if c.isdigit()]) )
+        jobsh_filename = os.path.split(jobsh_last)[-1]
+        i_last = int( ''.join([c for c in jobsh_filename if c.isdigit()]) )
         print(f"{jobsh_last} found!")
     else :
         i_last = 0
@@ -331,7 +335,7 @@ def restart(original_dir, n_jobs, depend=None, flash_name=FLASH_EXE) :
         stdout = f"shell.out{i:02d}"
         action = ( f"cd {original_dir}\n"
                     "prep_restart.py -auto\n"
-                   f"mpirun {FLASH_EXE} 1>{stdout} 2>&1" )
+                   f"mpirun {FLASH_EXE} -np {NCPUS} 1>{stdout} 2>&1" )
         job_name = NAME_JOB + f"_{i}"
         prev_job_id = submit_job(
             project=PROJECT, queue=QUEUE, walltime=WALLTIME, ncpus=NCPUS,
