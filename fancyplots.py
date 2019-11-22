@@ -31,13 +31,15 @@ if __name__ == "__main__" :
 
     args = parser.parse_args()
     if len(args.filenames) == 1 :
-        args.filename = args.filenames[0]
+        filename = args.filenames[0]
+    else :
+        filenames = args.filenames
 
     if args.proj_mpi :
-        print(f"plotting the projected field from {args.filename}...")
-        h5f = h5py.File(args.filename, 'r')
+        print(f"plotting the projected field from {filename}...")
+        h5f = h5py.File(filename, 'r')
 
-        filename_wo_ext = args.filename.split(".")[0]
+        filename_wo_ext = filename.split(".")[0]
         proj_axis = filename_wo_ext[-1]
         proj_title = "_".join(filename_wo_ext.split("_")[-3:-1])
         filename_plt = "_".join(filename_wo_ext.split("_")[:-3])
@@ -123,10 +125,10 @@ if __name__ == "__main__" :
     if args.imf :
         print(f"plotting the imf for {args.filename}...")
         # container for the constants
-        cst = CST(filename=args.filename)
+        cst = CST(filename=filename)
 
         # load the particle masses
-        pf = h5tools.PartFile(args.filename)
+        pf = h5tools.PartFile(filename)
         if pf.particles is not None :
             masses_in_msol = pf.particles['mass'] / cst.M_SOL
             part_exists = True
@@ -162,8 +164,8 @@ if __name__ == "__main__" :
         if args.o is not None :
             filename_out = args.o
         elif args.ext is not None :
-            filename_out = args.filename + '_imf.' + args.ext
+            filename_out = filename + '_imf.' + args.ext
         else :
-            filename_out = args.filename + '_imf.png'
+            filename_out = filename + '_imf.png'
         plt.savefig(filename_out)
         print("IMF printed to: "+filename_out)

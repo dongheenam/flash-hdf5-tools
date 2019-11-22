@@ -13,11 +13,11 @@ import dnam_tools, h5tools
 """ PARAMETERS - forcing generator """
 PATH_FORCING_GEN = "/home/100/dn8909/source/forcing_generator/"
 
-ST_POWER_LAW_EXP = "-2.0"
+ST_POWER_LAW_EXP = "0.2"
 VELOCITY = "1.0e5"
 ST_ENERGY = "0.9e-2 * velocity**3/L" # for beta=1
-#ST_ENERGY = "2.1e-2 * velocity**3/L" # for beta=2 (use 1.7e-2)
-ST_STIRMAX = "(64+eps) * twopi/L"
+#ST_ENERGY = "1.7e-2 * velocity**3/L" # for beta=2 (use 1.7e-2)
+ST_STIRMAX = "(256+eps) * twopi/L"
 
 """ PARAMETERS - FLASH """
 PATH_FLASH = "/short/ek9/dn8909/flash4.0.1-rsaa_fork/"
@@ -25,15 +25,15 @@ PATH_DATA = "/short/ek9/dn8909/data/"
 FLASH_EXE = "flash4_grav"
 
 RHO_0 = 6.56e-21
-RES_DENS_FACTOR = 0.625
+RES_DENS_FACTOR = 1.0
 
 """ PARAMETERS - QSUB """
 PROJECT = "jh2"
-QUEUE = "express"
-WALLTIME = "04:00:00"
-NCPUS = 512
+QUEUE = "normal"
+WALLTIME = "05:00:00"
+NCPUS = 1024
 MEM = f"{NCPUS * 2}GB"
-NAME_JOB = "b2_test"
+NAME_JOB = "b1turb"
 
 """
 ================================================================================
@@ -124,12 +124,17 @@ def submit_job(project=PROJECT, queue=QUEUE, walltime=WALLTIME, ncpus=NCPUS, mem
     print("writing jobscript to {}...".format(path_jobscript))
     job = open(path_jobscript, 'w')
 
+    # find the nearest multiple of 48
+    ncpus = 48*(ncpus//48 + 1)
+    mem = f"{ncpus * 2}GB"
+
     job.write("#!/bin/bash \n")
     job.write(f"#PBS -P {project} \n")
     job.write(f"#PBS -q {queue} \n")
     job.write(f"#PBS -l walltime={walltime} \n")
     job.write(f"#PBS -l ncpus={ncpus} \n")
     job.write(f"#PBS -l mem={mem} \n")
+    job.write(f"#PBS -l storage=scratch/ek9 \n")
     job.write("#PBS -l wd \n")
     job.write(f"#PBS -N {job_name} \n")
     job.write("#PBS -j oe \n")

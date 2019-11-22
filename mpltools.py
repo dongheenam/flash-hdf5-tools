@@ -448,9 +448,6 @@ if __name__ == "__main__" :
     args = parser.parse_args()
     filenames = args.filenames
 
-    # constants
-    cst = CST()
-
     # draws the 1d power spectrum
     if args.ps1d :
         styles = ([{'marker':'o', 'markersize':5, 'color':'red', 'alpha':1.0, 'label':r'$\mathrm{targ\_beta}=1$', 'linewidth':3, 'linestyle':'-'},
