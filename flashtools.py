@@ -20,19 +20,19 @@ ST_ENERGY = "0.9e-2 * velocity**3/L" # for beta=1
 ST_STIRMAX = "(256+eps) * twopi/L"
 
 """ PARAMETERS - FLASH """
-PATH_FLASH = "/short/ek9/dn8909/flash4.0.1-rsaa_fork/"
-PATH_DATA = "/short/ek9/dn8909/data/"
+PATH_FLASH = "/home/100/dn8909/source/flash4.0.1-rsaa_fork/"
+PATH_DATA = "/scratch/ek9/dn8909/data/"
 FLASH_EXE = "flash4_grav"
 
 RHO_0 = 6.56e-21
 RES_DENS_FACTOR = 1.0
 
 """ PARAMETERS - QSUB """
-PROJECT = "jh2"
+PROJECT = "ek9"
 QUEUE = "normal"
-WALLTIME = "05:00:00"
+WALLTIME = "18:00:00"
 NCPUS = 1024
-MEM = f"{NCPUS * 2}GB"
+MEM = f"{NCPUS * 4}GB"
 NAME_JOB = "b1turb"
 
 """
@@ -124,9 +124,10 @@ def submit_job(project=PROJECT, queue=QUEUE, walltime=WALLTIME, ncpus=NCPUS, mem
     print("writing jobscript to {}...".format(path_jobscript))
     job = open(path_jobscript, 'w')
 
-    # find the nearest multiple of 48
-    ncpus = 48*(ncpus//48 + 1)
-    mem = f"{ncpus * 2}GB"
+    # to request more than more than one nodes one must request full nodes (multiples of 48)
+    if ncpus > 48 :
+        ncpus = 48*(ncpus//48 + 1)
+        mem = f"{ncpus * 2}GB"
 
     job.write("#!/bin/bash \n")
     job.write(f"#PBS -P {project} \n")
