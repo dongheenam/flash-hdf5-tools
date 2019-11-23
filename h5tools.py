@@ -525,7 +525,7 @@ class H5File(object):
                 # begin loop over components
                 if data is None:
                     print("loading the field...")
-                    data = sort_field(self.H5File, self.H5File.h5f[comp_name])
+                    data = sort_field(self.H5File, self.H5File.h5f[dataname])
                     print("field loaded!")
                 else:
                     print("field found within the dataset!")
