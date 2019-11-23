@@ -22,7 +22,7 @@ ST_STIRMAX = "(256+eps) * twopi/L"
 """ PARAMETERS - FLASH """
 PATH_FLASH = "/home/100/dn8909/source/flash4.0.1-rsaa_fork/"
 PATH_DATA = "/scratch/ek9/dn8909/data/"
-FLASH_EXE = "flash4_grav"
+FLASH_EXE = "flash4"
 
 RHO_0 = 6.56e-21
 RES_DENS_FACTOR = 1.0
@@ -30,10 +30,10 @@ RES_DENS_FACTOR = 1.0
 """ PARAMETERS - QSUB """
 PROJECT = "ek9"
 QUEUE = "normal"
-WALLTIME = "18:00:00"
+WALLTIME = "12:00:00"
 NCPUS = 1024
 MEM = f"{NCPUS * 4}GB"
-NAME_JOB = "b1turb"
+NAME_JOB = "b1t_9"
 
 """
 ================================================================================
@@ -124,17 +124,20 @@ def submit_job(project=PROJECT, queue=QUEUE, walltime=WALLTIME, ncpus=NCPUS, mem
     print("writing jobscript to {}...".format(path_jobscript))
     job = open(path_jobscript, 'w')
 
-    # to request more than more than one nodes one must request full nodes (multiples of 48)
+    # to request more than more than one node one must request full nodes (multiples of 48)
     if ncpus > 48 :
-        ncpus = 48*(ncpus//48 + 1)
-        mem = f"{ncpus * 2}GB"
+        ncpus_gadi = 48*(ncpus//48 + 1)
+        mem_gadi = f"{ncpus_gadi * 2}GB"
+    else :
+        ncpus_gadi = ncpus
+        mem_gadi = mem
 
     job.write("#!/bin/bash \n")
     job.write(f"#PBS -P {project} \n")
     job.write(f"#PBS -q {queue} \n")
     job.write(f"#PBS -l walltime={walltime} \n")
-    job.write(f"#PBS -l ncpus={ncpus} \n")
-    job.write(f"#PBS -l mem={mem} \n")
+    job.write(f"#PBS -l ncpus={ncpus_gadi} \n")
+    job.write(f"#PBS -l mem={mem_gadi} \n")
     job.write(f"#PBS -l storage=scratch/ek9 \n")
     job.write("#PBS -l wd \n")
     job.write(f"#PBS -N {job_name} \n")
@@ -341,7 +344,7 @@ def restart(original_dir, n_jobs, depend=None, flash_name=FLASH_EXE) :
         stdout = f"shell.out{i:02d}"
         action = ( f"cd {original_dir}\n"
                     "prep_restart.py -auto\n"
-                   f"mpirun {FLASH_EXE} -np {NCPUS} 1>{stdout} 2>&1" )
+                   f"mpirun -np {NCPUS} {FLASH_EXE} 1>{stdout} 2>&1" )
         job_name = NAME_JOB + f"_{i}"
         prev_job_id = submit_job(
             project=PROJECT, queue=QUEUE, walltime=WALLTIME, ncpus=NCPUS,
