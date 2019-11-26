@@ -97,6 +97,8 @@ def plot_1D(x, y,
         if log is True :
             ax.set_xscale("log")
             ax.set_yscale("log")
+        elif log is False :
+            pass
         else :
             if log[0] is True :
                 ax.set_xscale("log")
