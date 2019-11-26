@@ -2,9 +2,12 @@
 
 # dependencies
 import argparse
+import glob
+import os
 import sys
 
 import numpy as np
+from scipy.ndimage import median_filter
 import matplotlib
 import matplotlib.pyplot as plt
 import h5py
@@ -12,6 +15,12 @@ import h5py
 import h5tools
 import mpltools
 from constants import *
+
+# constants
+BUILD_IMF_AT_SFE = 10.0
+
+PLOT_TITLE = r'$\beta=2, \alpha_\mathrm{vir}=1.0, N=512^3$'
+ANNOTATION = rf'$\mathrm{{SFE}} = {BUILD_IMF_AT_SFE:.0f}\%$'
 
 if __name__ == "__main__" :
 
@@ -23,6 +32,12 @@ if __name__ == "__main__" :
                         help='read the hdf5 file from projeciton_mpi and create a plot')
     parser.add_argument('--imf', action='store_true', default=False,
                         help='Set this flag to plot the IMF from the particle file')
+    parser.add_argument('--imfs', action='store_true', default=False,
+                        help='Build IMF from all folders that match the regexp')
+    parser.add_argument('--machs', action='store_true', default=False,
+                        help='Plot Mach numbers from all folders that match the regexp')
+    parser.add_argument('--sfrs', action='store_true', default=False,
+                        help='Plot SFR from all folders that match the regexp')
 
     parser.add_argument('-o', type=str,
                         help='the output path')
@@ -123,7 +138,7 @@ if __name__ == "__main__" :
     #endif args.proj_mpi
 
     if args.imf :
-        print(f"plotting the imf for {args.filename}...")
+        print(f"plotting the imf for {filename}...")
         # container for the constants
         cst = CST(filename=filename)
 
@@ -169,3 +184,137 @@ if __name__ == "__main__" :
             filename_out = filename + '_imf.png'
         plt.savefig(filename_out)
         print("IMF printed to: "+filename_out)
+
+    if args.imfs :
+        # find all the folders matching the regular expression
+        print(f"received the regexp {filename}...")
+        folders = glob.glob(filename)
+        folders.sort()
+        print(f"folders found: {folders}")
+        if len(folders) == 0 :
+            sys.exit("no folders matching the expression! exitting...")
+
+        # find the particle files
+        part_masses = np.array([], dtype='f8')
+        print(f"finding the particle files with SFE={BUILD_IMF_AT_SFE}...")
+        for folder in folders :
+            print(f"inspecting {folder}...")
+            filenames_part = glob.glob(
+                os.path.join(folder, "Turb_hdf5_part_????"))
+            filenames_part.sort()
+            print(f"{len(filenames_part)} particle files found!")
+            cst = CST(filename=filenames_part[0])
+
+            i = 0
+            while True :
+                filename_part = filenames_part[i]
+                pf = h5tools.PartFile(filename_part, verbose=False)
+                if pf.particles is None :
+                    SFE = 0.0
+                else :
+                    SFE = 100.0 * np.sum(pf.particles['mass']) / cst.M_TOT
+
+                print(f"{filename_part} read! SFE = {SFE:.2f}%...")
+                if SFE < BUILD_IMF_AT_SFE - 3.0 :
+                    i += 20
+                    continue
+                elif SFE < BUILD_IMF_AT_SFE :
+                    i += 1
+                    if i == len(filenames_part) :
+                        print("this simulation did not reach the specified SFE!")
+                        break
+                    continue
+                else :
+                    print(f"appending {len(pf.particles)} sinks to the IMF...")
+                    part_masses = np.append(part_masses, pf.particles['mass'])
+                    print(f"number of sinks so far : {len(part_masses)}")
+                    break
+            # endfor filenames_part
+        # endfor folders
+
+        # in terms of solar masses
+        masses_in_msol = part_masses / cst.M_SOL
+
+        # set up the bins
+        m_min = 0.1         # in solar masses
+        m_max = 100
+        n_bins = 20
+        logbins = np.logspace(np.log10(m_min),np.log10(m_max),n_bins)
+
+        # annotation
+        #annotation = ( rf'\begin{{align*}}'
+        #               rf'&\mathrm{{SFE}}={BUILD_IMF_AT_SFE:.0f}\%\\ '
+        #               rf'&N_\mathrm{{sink}}={len(masses_in_msol)} \end{{align*}}' )
+        annotation = f"sinks:{len(masses_in_msol)}, SFE={BUILD_IMF_AT_SFE:.0f}%"
+
+        # plot the IMF
+        mpltools.mpl_init()
+        matplotlib.rcParams['text.usetex'] = False
+        fig = plt.figure(figsize=(8,7))
+        ax = fig.add_subplot(111)
+        mpltools.plot_hist(masses_in_msol, ax=ax, log=True, yrange=(0.5, 20),
+            annotation=annotation, title=PLOT_TITLE,
+            xlabel=r'$M\,[M_\odot]$', ylabel=r'$\dfrac{dN}{d\log{M}}$',
+            bins=logbins, histtype='step', color='black', linewidth=2)
+        ax.plot(logbins, 300*logbins**(-1.35), color='red', linestyle='--')
+
+        # export the plot
+        if args.o is not None :
+            filename_out = args.o
+        elif args.ext is not None :
+            filename_out = filename + '_imf.' + args.ext
+        else :
+            filename_out = filename + '_imf.png'
+        plt.savefig(filename_out)
+        print("IMF printed to: "+filename_out)
+
+    if args.machs :
+        pass
+
+    if args.sfrs :
+        # find all the folders matching the regular expression
+        print(f"received the regexp {filename}...")
+        folders = glob.glob(filename)
+        folders.sort()
+        print(f"folders found: {folders}")
+        if len(folders) == 0 :
+            sys.exit("no folders matching the expression! exitting...")
+
+        # plotting preparation
+        mpltools.mpl_init()
+        matplotlib.rcParams['text.usetex'] = False
+        fig = plt.figure(figsize=(8,7))
+        ax = fig.add_subplot(111)
+
+        for folder in folders :
+            dat = h5tools.DatFile(os.path.join(folder, 'Turb.dat'))
+
+            filenames_plt = os.path.join(folder, 'Turb_hdf5_plt_cnt_????')
+            cst = CST(filename=glob.glob(filenames_plt)[0])
+
+            SFEs = (cst.M_TOT - dat.data['mass'])/cst.M_TOT
+            time_in_Tff = dat.data['time']/cst.T_FF
+            SFR_in_Tff = np.diff(SFEs) / np.diff(time_in_Tff)
+
+            # smooth the function
+            SFR_in_Tff = median_filter(SFR_in_Tff, size=100)
+            #SFR_in_Tff = savgol_filter(SFR_in_Tff, 11, 2)
+
+            if folder == folders[0] :
+                overplot=False
+            else :
+                overplot=True
+
+            mpltools.plot_1D(time_in_Tff[1:], SFR_in_Tff,
+                ax=ax, overplot=overplot, xrange=(None, None), yrange=(0.0, 0.50),
+                xlabel='t [T_ff]', ylabel='SFR_ff', title=PLOT_TITLE, alpha=0.3)
+
+        # export the plot
+        if args.o is not None :
+            filename_out = args.o
+        elif args.ext is not None :
+            filename_out = filename + '_imf.' + args.ext
+        else :
+            filename_out = filename + '_imf.png'
+        plt.savefig(filename_out)
+        print("plot printed to: "+filename_out)

@@ -200,7 +200,7 @@ class H5File(object):
     ================================================================================
     """
 
-    def __init__(self, filename):
+    def __init__(self, filename, verbose=True):
         self.filename = filename
         self.h5f = h5py.File(filename, 'r')
 
@@ -228,10 +228,11 @@ class H5File(object):
         self.block_sizes = read_data(self.h5f, 'block size')
         self.block_coords = read_data(self.h5f, 'coordinates')
 
-        print(f"{filename} read!")
-        print(f"simulation time: {self.params['time']:.4E}")
-        print(f"resolution     : {self.params['dims']}")
-        print(f"domain         : {self.params['L']}")
+        if verbose :
+            print(f"{filename} read!")
+            print(f"simulation time: {self.params['time']:.4E}")
+            print(f"resolution     : {self.params['dims']}")
+            print(f"domain         : {self.params['L']}")
 
     def new_dataset(self, dataname, small_mem=False):
         if dataname == 'dens':
@@ -580,7 +581,7 @@ class PartFile(object):
     ================================================================================
     """
 
-    def __init__(self, filename):
+    def __init__(self, filename, verbose=True):
         self.filename = filename
         self.h5f = h5py.File(filename, 'r')
 
@@ -617,14 +618,15 @@ class PartFile(object):
         # box size of the simulation
         self.params['L'] = [max - min for max, min in zip(Lmax, Lmin)]
 
-        print(f"{filename} read!")
-        print(f"simulation time: {self.params['time']:.4E}")
-        print(f"resolution     : {self.params['dims']}")
-        print(f"domain         : {self.params['L']}")
-        n_parts = 0 if self.particles is None else len(self.particles)
-        print(f"No. of sinks   : {n_parts}")
-        total_mass = 0 if self.particles is None else np.sum(self.particles['mass']) / 1.989e33
-        print(f"Mass of sinks  : {total_mass} solar masses")
+        if verbose :
+            print(f"{filename} read!")
+            print(f"simulation time: {self.params['time']:.4E}")
+            print(f"resolution     : {self.params['dims']}")
+            print(f"domain         : {self.params['L']}")
+            n_parts = 0 if self.particles is None else len(self.particles)
+            print(f"No. of sinks   : {n_parts}")
+            total_mass = 0 if self.particles is None else np.sum(self.particles['mass']) / 1.989e33
+            print(f"Mass of sinks  : {total_mass} solar masses")
 
     def read_parts(self):
         # names of the particle parameters
@@ -634,6 +636,37 @@ class PartFile(object):
         particles_raw = [tuple(p) for p in self.h5f['tracer particles']]
         particles = np.array(particles_raw, dtype=dtype)
         return particles
+
+class DatFile(object):
+    """
+    ================================================================================
+    DESCRIPTION
+        container for a Turb.dat file
+
+    INPUTS
+        filename (string)
+            the name of .dat file
+
+    VARIABLES
+        PartFile.filename (string)
+            the name of the .dat file
+
+    METHODS
+
+    ================================================================================
+    """
+    def __init__(self, filename, verbose=True) :
+        self.filename = filename
+        self.data = np.genfromtxt(filename, names=True)
+
+        if verbose :
+            print(f"data file {filename} read!")
+
+        # strip the first three letters of the keys
+        keys = self.data.dtype.names
+        keys = [s[3:] for s in keys]
+        self.keys = keys
+        self.data.dtype.names = keys
 
 
 if __name__ == "__main__":
