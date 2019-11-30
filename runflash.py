@@ -15,24 +15,24 @@ PATH_FORCING_GEN = "/home/100/dn8909/source/forcing_generator/"
 
 ST_POWER_LAW_EXP = "0.2"
 VELOCITY = "1.0e5"
-ST_ENERGY = "0.9e-2 * velocity**3/L" # for beta=1
+ST_ENERGY = "0.82e-2 * velocity**3/L" # for beta=1
 #ST_ENERGY = "1.7e-2 * velocity**3/L" # for beta=2 (use 1.7e-2)
 ST_STIRMAX = "(128+eps) * twopi/L"
 
 """ PARAMETERS - FLASH """
 PATH_FLASH = "/home/100/dn8909/source/flash4.0.1-rsaa_fork/"
 PATH_DATA = "/scratch/ek9/dn8909/data/"
-FLASH_EXE = "flash4"
+FLASH_EXE = "flash4_grav"
 
 RHO_0 = 6.56e-21
-RES_DENS_FACTOR = 0.5
+RES_DENS_FACTOR = 1.0
 
 """ PARAMETERS - QSUB """
 PROJECT = "ek9"
 QUEUE = "normal"
 WALLTIME = "24:00:00"
 NCPUS = 128
-MEM = f"{NCPUS * 4}GB"
+MEM = f"{NCPUS * 2}GB"
 NAME_JOB = "b1t"
 
 """
@@ -63,10 +63,12 @@ def replace_file(filename, begin_at=0, comment_symbol='#', **kwargs):
                     print(f"(line {line_no}) found: {line.rstrip()}")
                     i_start = line.find("=")  # replace from one space after the equal sign
                     i_end = line.find(comment_symbol)  # until the comment starts (if found)
-                    if i_end is -1:
-                        line = line[:i_start+1]+" {}".format(value)+"\n"
-                    else:
-                        line = line[:i_start+1]+" {0:<{1}}".format(value,i_end-i_start-2)+line[i_end:]
+                    # if there are no comments found
+                    if i_end == -1 :
+                        line = f"{line[:i_start+1]} {value}\n"
+                    else :
+                        len = i_end-i_start-2
+                        line = f"{line[:i_start+1]} {value:<{len}}{line[i_end:]}"
                     print(f"(line {line_no}) =>     {line.rstrip()}")
                     break
             # endfor kwargs.items()
@@ -125,7 +127,7 @@ def submit_job(project=PROJECT, queue=QUEUE, walltime=WALLTIME, ncpus=NCPUS, mem
     job = open(path_jobscript, 'w')
 
     # to request more than more than one node one must request full nodes (multiples of 48)
-    if ncpus > 48 :
+    if (ncpus > 48 and ncpus//48 != 0) :
         ncpus_gadi = 48*(ncpus//48 + 1)
         mem_gadi = f"{ncpus_gadi * 2}GB"
     else :
@@ -210,7 +212,7 @@ def first_sim(original_dir, seed=140281, depend=None):
     return job_id
 
 
-def restart_grav1(original_dir, seed=140281, depend=None):
+def restart_grav1(original_dir, seed=140281, depend=None, wo_plt=False):
     """
     create a sink simulation and submit a short job
     for the re-initialisation required for turning on the gravity
@@ -250,6 +252,13 @@ def restart_grav1(original_dir, seed=140281, depend=None):
     # read the last checkfile
     h5t = h5tools.H5File(chkfile_last)
 
+    # whether or not to generate the plotfiles
+    particle_interval = "1.543e11"
+    if wo_plt :
+        plot_interval = "1.000e99"
+    else :
+        plot_interval = particle_interval
+
     # modify the flash.par file
     flash_par_new = os.path.join(new_dir, "flash.par")
     replace_file(flash_par_new,
@@ -260,6 +269,8 @@ def restart_grav1(original_dir, seed=140281, depend=None):
                  checkpointFileNumber=f"{h5t.params['checkpointfilenumber']}",
                  plotFileNumber=f"{h5t.params['plotfilenumber']}",
                  particleFileNumber=f"{h5t.params['plotfilenumber']}",
+                 plotFileIntervalTime=plot_interval,
+                 particleFileIntervalTime=particle_interval,
                  tmax="3.086e14",
                  usePolytrope=".true.",
                  res_rescale_dens=".true.",
@@ -303,10 +314,6 @@ def restart_grav2(original_dir, seed=140281, depend=None):
                  restart=".true.",
                  nend="1000000",
                  checkpointFileNumber=f"{h5t.params['checkpointfilenumber']}",
-                 plotFileNumber=f"{h5t.params['plotfilenumber']}",
-                 particleFileNumber=f"{h5t.params['plotfilenumber']}",
-                 plotFileIntervalTime="1.543e11",
-                 particleFileIntervalTime="1.543e11",
                  tmax="3.086e14",
                  usePolytrope=".true.",
                  res_rescale_dens=".false.",
@@ -318,7 +325,7 @@ def restart_grav2(original_dir, seed=140281, depend=None):
     action = f"cd {new_dir} \nmpirun -np {NCPUS} flash4_grav 1>{stdout} 2>&1"
     job_id = submit_job(project=PROJECT, queue=QUEUE, walltime=WALLTIME,
                         ncpus=NCPUS, mem=MEM, dir=new_dir, action=action,
-                        script_name="job.sh.init2", job_name=NAME_JOB+f"_{seed}", prev_job_id=depend)
+                        script_name="job.sh.init2", job_name=f"{NAME_JOB}_{seed}", prev_job_id=depend)
     return job_id
 
 def restart(original_dir, n_jobs, depend=None, flash_name=FLASH_EXE) :
@@ -345,7 +352,7 @@ def restart(original_dir, n_jobs, depend=None, flash_name=FLASH_EXE) :
         action = ( f"cd {original_dir}\n"
                     "prep_restart.py -auto\n"
                    f"mpirun -np {NCPUS} {FLASH_EXE} 1>{stdout} 2>&1" )
-        job_name = NAME_JOB + f"_{i}"
+        job_name = f"{NAME_JOB}_{i}"
         prev_job_id = submit_job(
             project=PROJECT, queue=QUEUE, walltime=WALLTIME, ncpus=NCPUS,
             mem=MEM, dir=original_dir, action=action, script_name=script_name,
@@ -363,8 +370,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='')
     parser.add_argument('original_dir', type=str,
                         help='the directory to flash exec and flash.par')
-    parser.add_argument('-seed', type=int, default=140281,
-                        help='the random seed for the forcing file')
+    parser.add_argument('-seeds', type=int, default=140281, nargs='*',
+                        help='the random seeds for the forcing file')
 
     parser.add_argument('-restart', type=int, default=0,
                         help='submit the restarts')
@@ -381,6 +388,8 @@ if __name__ == "__main__":
     parser.add_argument('--res_grav', action='store_true', default=False,
                         help='runs res_grav1 and res_grav2 at the same time')
 
+    parser.add_argument('--wo_plt', action='store_true', default=False,
+                        help='do not produce the plt_cnt files')
     parser.add_argument('-depend', type=str, default=None,
                         help='the id of the depending job')
 
@@ -393,7 +402,8 @@ if __name__ == "__main__":
 
     # initialisation and turbulence driving
     if args.first:
-        first_sim(original_dir, seed=args.seed, depend=args.depend)
+        for seed in args.seeds :
+            first_sim(original_dir, seed=seed, depend=args.depend)
 
     # restart using prep_restart.py
     if args.restart != 0:
@@ -401,23 +411,27 @@ if __name__ == "__main__":
 
     # first restart for the sink simulation
     if args.res_grav1:
-        restart_grav1(original_dir, seed=args.seed, depend=args.depend)
+        for seed in args.seeds :
+            restart_grav1(original_dir, seed=seed, depend=args.depend, wo_plt=args.wo_plt)
 
     # second restart for the sink simulation
     if args.res_grav2:
-        restart_grav2(original_dir, seed=args.seed, depend=args.depend)
+        for seed in args.seeds :
+            restart_grav2(original_dir, seed=seed, depend=args.depend)
 
     # submit both restarts for the sink simulation
     if args.res_grav:
-        # first restart
-        job_id = restart_grav1(original_dir, seed=args.seed, depend=args.depend)
+        for seed in args.seeds :
+            # first restart
+            job_id = restart_grav1(original_dir, seed=seed, depend=args.depend,
+                    wo_plt=args.wo_plt)
 
-        # qsub the second restart (run after the first restart is finished)
-        cwd = os.getcwd()
-        stdout = "shell.out.flashtools"
-        action = (f"cd {cwd} \nflashtools.py {original_dir}"
-                  f" -seed {args.seed} --res_grav2 1>{stdout} 2>&1")
-        submit_job(project=PROJECT, queue=QUEUE, walltime="00:15:00",
-                   ncpus=2, mem="4GB", dir=cwd, action=action,
-                   script_name="job.sh.flashtools", job_name="res",
-                   prev_job_id=job_id)
+            # qsub the second restart (run after the first restart is finished)
+            cwd = os.getcwd()
+            stdout = "shell.out.flashtools"
+            action = (f"cd {cwd} \nrunflash.py {original_dir}"
+                      f" -seeds {seed} --res_grav2 1>{stdout} 2>&1")
+            submit_job(project=PROJECT, queue=QUEUE, walltime="00:15:00",
+                ncpus=2, mem="4GB", dir=cwd, action=action,
+                script_name="job.sh.flashtools", job_name="submit_restart",
+                prev_job_id=job_id)
