@@ -20,7 +20,7 @@ def get_file(path, loc='last') :
     """
     DESCRIPTION
         From the specified path (with wildcards),
-        return the filename at the specific lococation (first or last)
+        return the filename at the specific lococation (first, last, or given index)
     """
     files = glob.glob(path)
     files.sort()
@@ -30,9 +30,10 @@ def get_file(path, loc='last') :
         return files[-1]
     elif loc == 'first' :
         return files[0]
+    elif isinstance(loc, int) :
+        return files[int]
     else :
         return None
-
 """
 ================================================================================
 Predefined macros
