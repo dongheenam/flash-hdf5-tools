@@ -2,38 +2,49 @@
 
 # dependencies
 import argparse
+import glob
 import os
 import sys
 import shutil
 import subprocess
 import tempfile
 
-import dnam_tools, h5tools
+import numpy as np
+
+import constants
+import dnam_tools
+import h5tools
 
 """ PARAMETERS - forcing generator """
 PATH_FORCING_GEN = "/home/100/dn8909/source/forcing_generator/"
 
-ST_POWER_LAW_EXP = "0.2"
+ST_POWER_LAW_EXP = "-2.0"
 VELOCITY = "1.0e5"
-ST_ENERGY = "0.82e-2 * velocity**3/L" # for beta=1
-#ST_ENERGY = "1.7e-2 * velocity**3/L" # for beta=2 (use 1.7e-2)
-ST_STIRMAX = "(128+eps) * twopi/L"
+#ST_ENERGY = "0.82e-2 * velocity**3/L" # for beta=1
+ST_ENERGY = "1.7e-2 * velocity**3/L" # for beta=2
+ST_STIRMAX = "(512+eps) * twopi/L"
 
 """ PARAMETERS - FLASH """
 PATH_FLASH = "/home/100/dn8909/source/flash4.0.1-rsaa_fork/"
 PATH_DATA = "/scratch/ek9/dn8909/data/"
 FLASH_EXE = "flash4_grav"
 
-RHO_0 = 6.56e-21
+CHKFILE_PREFIX = "Turb_hdf5_chk"
+PLOTFILE_PREFIX = "Turb_hdf5_plt_cnt"
+PARTFILE_PREFIX = "Turb_hdf5_part"
+
+RHO_0 = 4.23e-21
 RES_DENS_FACTOR = 1.0
+
+KEEP_FILES_AT_SFE = np.linspace(0.01,0.20,20)
 
 """ PARAMETERS - QSUB """
 PROJECT = "ek9"
 QUEUE = "normal"
 WALLTIME = "24:00:00"
-NCPUS = 128
-MEM = f"{NCPUS * 2}GB"
-NAME_JOB = "b1t"
+NCPUS = 528
+MEM = f"{NCPUS * 4}GB"
+NAME_JOB = "b2t"
 
 """
 ================================================================================
@@ -123,13 +134,13 @@ def submit_job(project=PROJECT, queue=QUEUE, walltime=WALLTIME, ncpus=NCPUS, mem
         writes a pbs script and submit the job and returns the job name
     """
     path_jobscript = os.path.join(dir, script_name)
-    print("writing jobscript to {}...".format(path_jobscript))
+    print(f"writing jobscript to {path_jobscript}...")
     job = open(path_jobscript, 'w')
 
     # to request more than more than one node one must request full nodes (multiples of 48)
     if (ncpus > 48 and ncpus//48 != 0) :
         ncpus_gadi = 48*(ncpus//48 + 1)
-        mem_gadi = f"{ncpus_gadi * 2}GB"
+        mem_gadi = f"{ncpus_gadi * 4}GB"
     else :
         ncpus_gadi = ncpus
         mem_gadi = mem
@@ -157,7 +168,6 @@ def submit_job(project=PROJECT, queue=QUEUE, walltime=WALLTIME, ncpus=NCPUS, mem
 
     print(f"completed! job id: {job_id}")
     return job_id
-
 
 """
 ================================================================================
@@ -243,7 +253,7 @@ def restart_grav1(original_dir, seed=140281, depend=None, wo_plt=False):
     shutil.copy2(path_flash_par, new_dir)
 
     # find the last checkfile and create a symbolic link
-    chkfiles = os.path.join(os.getcwd(), path_turb_sim, "Turb_hdf5_chk_????")
+    chkfiles = os.path.join(os.getcwd(), path_turb_sim, f"{CHKFILE_PREFIX}_????")
     chkfile_last = dnam_tools.get_file(chkfiles, loc='last')
     link_chkfile_last = os.path.join(new_dir, os.path.split(chkfile_last)[1])
     cp = subprocess.run(["ln", "-s", chkfile_last, link_chkfile_last], capture_output=True, check=True, text=True)
@@ -283,7 +293,7 @@ def restart_grav1(original_dir, seed=140281, depend=None, wo_plt=False):
     action = f"cd {new_dir} \nmpirun -np {NCPUS} flash4_grav 1>{stdout} 2>&1"
     job_id = submit_job(project=PROJECT, queue=QUEUE, walltime="02:00:00",
                         ncpus=NCPUS, mem=MEM, dir=new_dir, action=action,
-                        script_name="job.sh.init", job_name=f"grav_restart_{seed}", prev_job_id=depend)
+                        script_name="job.sh.init", job_name=f"gr1_{seed}", prev_job_id=depend)
     return job_id
 
 
@@ -300,7 +310,7 @@ def restart_grav2(original_dir, seed=140281, depend=None):
         sys.exit(f"{new_dir} does not exist")
 
     # find the last checkfile
-    chkfiles = os.path.join(new_dir, "Turb_hdf5_chk_????")
+    chkfiles = os.path.join(new_dir, f"{CHKFILE_PREFIX}_????")
     chkfile_last = dnam_tools.get_file(chkfiles, loc='last')
 
     # read the last checkfile
@@ -327,6 +337,7 @@ def restart_grav2(original_dir, seed=140281, depend=None):
                         ncpus=NCPUS, mem=MEM, dir=new_dir, action=action,
                         script_name="job.sh.init2", job_name=f"{NAME_JOB}_{seed}", prev_job_id=depend)
     return job_id
+
 
 def restart(original_dir, n_jobs, depend=None, flash_name=FLASH_EXE) :
     """
@@ -360,6 +371,69 @@ def restart(original_dir, n_jobs, depend=None, flash_name=FLASH_EXE) :
 
     print("exiting flashtools.py...")
 
+def clean_hdf5(original_dir, seed=140281, keep_files_at_sfe=KEEP_FILES_AT_SFE,
+               delete_plotfiles=True, delete_partfiles=True, delete_chkfiles=True) :
+    print(f"inspecting {original_dir}_{seed:06d}_sink for cleanning...")
+    # first find all the plot and particle files
+    filenames_plt = glob.glob(
+        os.path.join(f"{original_dir}_{seed:06d}_sink", f"{PLOTFILE_PREFIX}_????"))
+    filenames_part = glob.glob(
+        os.path.join(f"{original_dir}_{seed:06d}_sink", f"{PARTFILE_PREFIX}_????"))
+    filenames_plt.sort()
+    filenames_part.sort()
+    n_files = len(filenames_part)
+    print(f"found {n_files} files!")
+    if n_files == 0 :
+        return 0.0
+
+    # loop over the file
+    j_SFE = 0
+    SFEs_all_found = False
+    for i in range(1, n_files-1) :
+        # reset the filenames for deletion
+        plotfile_deleted = None
+        partfile_deleted = None
+
+        # check the SFE of the file
+        cst = constants.CST(filename=filenames_part[i], verbose=False)
+        SFE = cst.SFE
+
+        # if there are no sinks, delete the previous file
+        if SFE == 0.0 :
+            if delete_plotfiles :
+                plotfile_deleted = filenames_plt[i-1]
+            if delete_partfiles :
+                partfile_deleted = filenames_part[i-1]
+        # if the SFE did not reach the flag yet, delete the current file
+        elif SFE < KEEP_FILES_AT_SFE[j_SFE] :
+            if delete_plotfiles :
+                plotfile_deleted = filenames_plt[i]
+            if delete_partfiles :
+                partfile_deleted = filenames_part[i]
+        # if the SFE did reach the flag and not all flags are found,
+        # keep the file and move to the next flag
+        elif not SFEs_all_found :
+            print(f"SFE reached at the specified value!")
+            j_SFE += 1
+
+            if j_SFE == len(KEEP_FILES_AT_SFE) :
+                SFEs_all_found = True
+                j_SFE = 0
+        # if all flags are found, then delete the rest of the files
+        else :
+            if delete_plotfiles :
+                plotfile_deleted = filenames_plt[i]
+            if delete_partfiles :
+                partfile_deleted = filenames_part[i]
+
+        if plotfile_deleted is not None :
+            os.remove(plotfile_deleted)
+        if partfile_deleted is not None :
+            os.remove(partfile_deleted)
+        print(f"SFE:{100.0*SFE:5.2f}%, deleted: {plotfile_deleted} {partfile_deleted}")
+    #endfor
+    return SFE
+
 """
 ================================================================================
 MAIN
@@ -387,6 +461,8 @@ if __name__ == "__main__":
                         help='submit a second restart for gravity simulation')
     parser.add_argument('--res_grav', action='store_true', default=False,
                         help='runs res_grav1 and res_grav2 at the same time')
+    parser.add_argument('--clean', action='store_true', default=False,
+                        help='clean most of the plotfile and particle files')
 
     parser.add_argument('--wo_plt', action='store_true', default=False,
                         help='do not produce the plt_cnt files')
@@ -428,10 +504,23 @@ if __name__ == "__main__":
 
             # qsub the second restart (run after the first restart is finished)
             cwd = os.getcwd()
-            stdout = "shell.out.flashtools"
+            stdout = "shell.out.rs2_{seed}"
             action = (f"cd {cwd} \nrunflash.py {original_dir}"
                       f" -seeds {seed} --res_grav2 1>{stdout} 2>&1")
             submit_job(project=PROJECT, queue=QUEUE, walltime="00:15:00",
                 ncpus=2, mem="4GB", dir=cwd, action=action,
-                script_name="job.sh.flashtools", job_name="submit_restart",
+                script_name=f"job.sh.rs2_{seed}", job_name=f"submit2_{seed}",
                 prev_job_id=job_id)
+
+    # clean the files
+    if args.clean :
+        n_seeds = len(args.seeds)
+        SFEs_max = np.zeros(n_seeds)
+        for i, seed in zip(range(n_seeds), args.seeds) :
+            SFEs_max[i] = clean_hdf5(original_dir, seed=seed)
+
+        print("================================================================")
+        print("cleaning finished!")
+        print("{:>10s} {:>10s}".format("seed", "max SFE"))
+        for SFE_max, seed in zip(SFEs_max, args.seeds) :
+            print(f"{seed:10d} {100*SFE_max:9.2f}%")
