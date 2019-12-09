@@ -11,7 +11,7 @@ import tempfile
 
 import numpy as np
 
-import constants
+import measures
 import dnam_tools
 import h5tools
 
@@ -395,7 +395,7 @@ def clean_hdf5(original_dir, seed=140281, keep_files_at_sfe=KEEP_FILES_AT_SFE,
         partfile_deleted = None
 
         # check the SFE of the file
-        cst = constants.CST(filename=filenames_part[i], verbose=False)
+        cst = measures.CST(filename=filenames_part[i], verbose=False)
         SFE = cst.SFE
 
         # if there are no sinks, delete the previous file

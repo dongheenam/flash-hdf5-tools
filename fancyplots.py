@@ -12,6 +12,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import h5py
 
+from constants import M_SOL, PC_flash
 import measures
 import h5tools
 import mpltools
@@ -60,26 +61,26 @@ def proj_mpi(filename, filename_out, save=True, ax=plt.gca(), **kwargs) :
         cst = CST(filename=filename_plt)
 
     dens_proj = h5f[proj_title]
-    xyz_lim = np.array(h5f['minmax_xyz']) / 3.086e18
+    xyz_lim = np.array(h5f['minmax_xyz']) / PC
 
     if proj_axis == 'x' :
         xlabel, ylabel = (r'$y \,[\mathrm{pc}]$', r'$z \,[\mathrm{pc}]$')
         xrange, yrange = (xyz_lim[1], xyz_lim[2])
         if part_exists :
-            part_xlocs = pf.particles['posy'] / 3.086e18
-            part_ylocs = pf.particles['posz'] / 3.086e18
+            part_xlocs = pf.particles['posy'] / PC_flash
+            part_ylocs = pf.particles['posz'] / PC_flash
     elif proj_axis == 'y' :
         xlabel, ylabel = (r'$x \,[\mathrm{pc}]$', r'$z \,[\mathrm{pc}]$')
         xrange, yrange = (xyz_lim[0], xyz_lim[2])
         if part_exists :
-            part_xlocs = pf.particles['posx'] / 3.086e18
-            part_ylocs = pf.particles['posz'] / 3.086e18
+            part_xlocs = pf.particles['posx'] / PC_flash
+            part_ylocs = pf.particles['posz'] / PC_flash
     elif proj_axis == 'z' :
         xlabel, ylabel = (r'$x \,[\mathrm{pc}]$', r'$y \,[\mathrm{pc}]$')
         xrange, yrange = (xyz_lim[0], xyz_lim[1])
         if part_exists :
-            part_xlocs = pf.particles['posx'] / 3.086e18
-            part_ylocs = pf.particles['posy'] / 3.086e18
+            part_xlocs = pf.particles['posx'] / PC_flash
+            part_ylocs = pf.particles['posy'] / PC_flash
 
     if not part_exists :
         part_xlocs = []
@@ -154,7 +155,7 @@ def imfs(folders_regexp, filename_out, save=True, ax=plt.gca(), **kwargs) :
     # endfor folders
 
     # in terms of solar masses
-    masses_in_msol = part_masses / cst.M_SOL
+    masses_in_msol = part_masses / M_SOL
 
     # set up the bins
     m_min = M_MIN *M_SHIFT_FACTOR

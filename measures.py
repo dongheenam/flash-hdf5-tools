@@ -68,7 +68,6 @@ class CST(object) :
                 print(f"L updated from H5File to be: {L}")
 
         # store the variables
-        self.M_SOL = M_SOL
         self.M_TOT = M_TOT
         self.L = L
         self.C_S = C_S
