@@ -31,8 +31,13 @@ def get_file(path, loc='last') :
     elif loc == 'first' :
         return files[0]
     elif isinstance(loc, int) :
-        return files[int]
+        try :
+            return files[int]
+        except IndexError :
+            print("loc out of range!")
+            return None
     else :
+        print("loc not valid!")
         return None
 """
 ================================================================================
