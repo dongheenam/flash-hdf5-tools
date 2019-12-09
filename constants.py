@@ -7,6 +7,13 @@ import numpy as np
 
 import h5tools
 
+# physical constants
+M_SOL = 1.98847542e33   # solar mass
+AU = 1.495979e13        # astronomical unit
+LY = 9.460730e17        # light year
+PC = 3.085678e18        # parsec
+
+
 class CST(object) :
     """
     container for the constants
@@ -15,7 +22,6 @@ class CST(object) :
     """
     def __init__(self, H5File=None, filename=None, verbose=True, **params_custom) :
         # initial variables
-        M_SOL = 1.98847542e33 # solar mass
         M_TOT = 387.5 * M_SOL # total mass of the system
         L = 2 * 3.086e18      # box length
         C_S = 0.2e5           # isothermal sound speed
