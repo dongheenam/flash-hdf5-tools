@@ -75,7 +75,7 @@ class CST(object) :
         self.MACH = MACH
         self.RHO = RHO
 
-        self.SIGMA_V = C_S * MACH
+        self.SIGMA_V = C_S * MACH # (3D) velocity dispersion
         self.T_TURB = L / (2*self.SIGMA_V) # turbulent crossing time
         self.T_FF = np.sqrt(3*np.pi/(32*G*self.RHO)) # free-fall time
         self.VIR = (5*self.SIGMA_V**2*L/2)/(3*G*M_TOT) # virial parameter
@@ -86,8 +86,13 @@ class CST(object) :
                 self.SFE = 0.0
             else :
                 self.SFE = np.sum(H5File.particles['mass']) / M_TOT
+        else :
+            self.SFE = None
 
     def show(self) :
+        """
+        function to print the calculated constants to stdout
+        """
         print(f"Turbulent crossing time: {self.T_TURB:.4E}")
         print(f"free-fall time         : {self.T_FF:.4E}")
         print(f"mean density           : {self.RHO:.4E}")
