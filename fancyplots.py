@@ -12,7 +12,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import h5py
 
-import constants
+import measures
 import h5tools
 import mpltools
 
@@ -134,7 +134,7 @@ def imfs(folders_regexp, filename_out, save=True, ax=plt.gca(), **kwargs) :
         i = 0
         while True :
             filename_part = filenames_part[i]
-            cst = constants.CST(filename=filename_part, verbose=False)
+            cst = measures.CST(filename=filename_part, verbose=False)
             SFE = cst.SFE
 
             print(f"{filename_part} read! SFE = {100*SFE:.2f}%...")
@@ -209,7 +209,7 @@ def sfrs(folders_regexp, filename_out, save=True, ax=plt.gca(), **kwargs) :
 
         filenames_plt = os.path.join(folder, 'Turb_hdf5_plt_cnt_????')
         try :
-            cst = constants.CST(filename=glob.glob(filenames_plt)[0])
+            cst = measures.CST(filename=glob.glob(filenames_plt)[0])
         except IndexError :
             print(f"plotfile does not exist in {folder}. skipping...")
             continue

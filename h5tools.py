@@ -9,8 +9,11 @@ import h5py  # hdf5 handling
 import numpy as np
 import pyfftw  # python wrapper for FFTW
 
+from constants import M_SOL
 import dnam_tools  # my tools for python
 
+# constants
+N_THREADS = 16      # number of threads for pyfftw
 
 def read_parameters(h5f, keyword):
     """
@@ -45,17 +48,6 @@ def read_data(h5f, dataname):
     DESCRIPTION
     return the specified array that does not need to be sorted
     as a NumPy from the FLASH hdf5 file
-
-    INPUTS
-    h5f (h5py.File)
-        the h5py File object containing the hdf5 file
-    dataname (string)
-        the keyword for the array
-        e.g. ['block size', 'coordinates']
-
-    OUTPUTS
-        array (float[: , ... , :])
-            the NumPy array containing the data
     """
     # the parameters
     data = np.array(h5f[dataname])
@@ -110,10 +102,11 @@ def sort_field(H5file, data_unsorted):
         block_tr_ind = np.rint((block_tr_loc - L_bl) / L_cell).astype(int)
 
         # insert the block
-        data_sorted[block_bl_ind[0]:block_tr_ind[0], \
-        block_bl_ind[1]:block_tr_ind[1], \
-        block_bl_ind[2]:block_tr_ind[2]] \
-            = data_unsorted[block_id]
+        data_sorted[
+            block_bl_ind[0]:block_tr_ind[0],\
+            block_bl_ind[1]:block_tr_ind[1],\
+            block_bl_ind[2]:block_tr_ind[2] \
+        ] = data_unsorted[block_id]
 
     # update the sorted data
     return data_sorted
@@ -173,13 +166,15 @@ def save_to_dat(filename_out, *datas_and_names):
 
 class H5File(object):
     """
-    ================================================================================
+    ============================================================================
     DESCRIPTION
         container for a FLASH hdf5 file and its parameters
 
     INPUTS
         filename (string)
             the name of the hdf5 file
+        verbose (boolean) (default=True)
+            prints info to stdout
 
     VARIABLES
         H5File.filename (string)
@@ -194,9 +189,9 @@ class H5File(object):
             the coordinates of the centre of each block
 
     METHODS
-        H5file.new_dataset(dataname)
-            returns a scalar or vector dataset instance, depending on the data name
-    ================================================================================
+        H5file.new_dataset(dataname, small_mem=False)
+            returns a scalar or vector dataset instance (depend on dataname)
+    ============================================================================
     """
 
     def __init__(self, filename, verbose=True):
@@ -224,6 +219,7 @@ class H5File(object):
         # box size of the simulation
         self.params['L'] = [max - min for max, min in zip(Lmax, Lmin)]
 
+        # size of each block and their coordinates
         self.block_sizes = read_data(self.h5f, 'block size')
         self.block_coords = read_data(self.h5f, 'coordinates')
 
@@ -251,7 +247,7 @@ class H5File(object):
                 return d
             except:
                 print("dataname not recognised!")
-                return
+                return None
 
     class Dataset(object):
         """
@@ -266,7 +262,7 @@ class H5File(object):
                 the name of the dataset
 
             small_mem(boolean) (default=False)
-                set it to True if dataset is too big
+                set it to True to load data only when necessary
 
         VARIABLES
             Dataset.H5File
@@ -274,11 +270,11 @@ class H5File(object):
             Dataset.dataname (string)
                 the name of the data
 
-            Dataset.ps (array_like[k_max])            <== Dataset.calc_ps(calc_1D=True)
+            Dataset.ps (array_like[k_max])  <== Dataset.calc_ps()
                 the one-dimensional power spectrum of .data
 
         METHODS
-            Dataset.calc_ps(self, save=False, save_path=None)
+            Dataset.calc_ps(self, save=False, filename_out=None)
                 calculate the 1D spectrum
                 requires the fourier spectrum (self.ft) to exist
         ================================================================================
@@ -300,7 +296,7 @@ class H5File(object):
                 print("3D power spectrum not found!")
                 self.calc_ps_3D()
 
-            print("calculating the power spectrum...")
+            print("calculating the 1D power spectrum...")
             sum_power = np.sum(self.ps_3D)
 
             # some physical properties
@@ -353,6 +349,7 @@ class H5File(object):
             print("completed!")
             print("time taken: {}".format(delta.total_seconds()))
 
+            # save the power spectrum if asked
             if save is True:
                 dataname_ps = self.dataname + "ps"
                 if filename_out is None:
@@ -413,8 +410,9 @@ class H5File(object):
             print("performing fast fourier transform...")
             rms_field = np.sqrt(np.average(self.data ** 2))
 
-            fft_object = pyfftw.builders.fftn(self.data, threads=16)
-            self.ft = np.fft.fftshift(fft_object()) / np.product(self.H5File.params['dims'])
+            fft_object = pyfftw.builders.fftn(self.data, threads=N_THREADS)
+            N = np.product(self.H5File.params['dims'])
+            self.ft = np.fft.fftshift(fft_object()) / N
 
             print("... fft completed!")
             if small_mem is True:
@@ -533,14 +531,11 @@ class H5File(object):
                 ms_field += np.average(data ** 2)
 
                 print("performing fast fourier transform...")
-                fft_object = pyfftw.builders.fftn(data, threads=16)
+                fft_object = pyfftw.builders.fftn(data, threads=N_THREADS)
                 FF = np.fft.fftshift(fft_object()) / np.product(dims)
 
                 ps_3D += np.abs(FF) ** 2
                 print("completed!")
-
-                data = None
-                gc.collect()
             # end loop over components
 
             self.ps_3D = ps_3D
@@ -549,6 +544,7 @@ class H5File(object):
             delta = t_end - t_start
             print("time taken: {}".format(delta.total_seconds()))
 
+            # save the power spectrum if required
             if save is True:
                 dataname_ps = self.dataname + "ps3D"
                 if filename_out is None:
@@ -574,6 +570,9 @@ class PartFile(object):
             the h5py File object
         PartFile.params (dictionary)
             the integer/real parameters/scalars from the file
+        PartFile.particles (np.array)
+            NumPy structured array of the particle data
+            is None when there are no particles
 
     METHODS
 
@@ -618,13 +617,17 @@ class PartFile(object):
         self.params['L'] = [max - min for max, min in zip(Lmax, Lmin)]
 
         if verbose :
+            if self.particles is None :
+                n_parts = 0
+                total_mass = 0.0
+            else :
+                n_parts = len(self.particles)
+                total_mass = np.sum(self.particles['mass']) / M_SOL
             print(f"{filename} read!")
             print(f"simulation time: {self.params['time']:.4E}")
             print(f"resolution     : {self.params['dims']}")
             print(f"domain         : {self.params['L']}")
-            n_parts = 0 if self.particles is None else len(self.particles)
             print(f"No. of sinks   : {n_parts}")
-            total_mass = 0 if self.particles is None else np.sum(self.particles['mass']) / 1.989e33
             print(f"Mass of sinks  : {total_mass} solar masses")
 
     def read_parts(self):
@@ -697,19 +700,19 @@ if __name__ == "__main__":
 
     # otherwise search for the last plt and part files
     else :
-        last_chkfile = dnam_tools.get_file("Turb_hdf5_chk_????", loc='last')
+        last_chkfile = dnam_tools.get_file("Turb_hdf5_chk_????", loc=-2)
         if last_chkfile is not None :
             H5File(last_chkfile)
         else :
             print("checkfile not found!")
 
-        last_pltfile = dnam_tools.get_file("Turb_hdf5_plt_cnt_????", loc='last')
+        last_pltfile = dnam_tools.get_file("Turb_hdf5_plt_cnt_????", loc=-2)
         if last_pltfile is not None :
             H5File(last_pltfile)
         else :
             print("plotfile not found!")
 
-        last_partfile = dnam_tools.get_file("Turb_hdf5_part_????", loc='last')
+        last_partfile = dnam_tools.get_file("Turb_hdf5_part_????", loc=-2)
         if last_partfile is not None :
             PartFile(last_partfile)
         else :
