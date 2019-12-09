@@ -32,7 +32,7 @@ def get_file(path, loc='last') :
         return files[0]
     elif isinstance(loc, int) :
         try :
-            return files[int]
+            return files[loc]
         except IndexError :
             print("loc out of range!")
             return None
