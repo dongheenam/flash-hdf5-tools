@@ -20,14 +20,14 @@ PATH_FORCING_GEN = "/home/100/dn8909/source/forcing_generator/"
 
 ST_POWER_LAW_EXP = "-2.0"
 VELOCITY = "1.0e5"
-#ST_ENERGY = "0.82e-2 * velocity**3/L" # for beta=1
+#ST_ENERGY = "1.03e-2 * velocity**3/L" # for beta=1 (0.82e-2 for UG)
 ST_ENERGY = "1.7e-2 * velocity**3/L" # for beta=2
-ST_STIRMAX = "(512+eps) * twopi/L"
+ST_STIRMAX = "(256+eps) * twopi/L"
 
 """ PARAMETERS - FLASH """
 PATH_FLASH = "/home/100/dn8909/source/flash4.0.1-rsaa_fork/"
 PATH_DATA = "/scratch/ek9/dn8909/data/"
-FLASH_EXE = "flash4_grav"
+FLASH_EXE = "flash4"
 
 CHKFILE_PREFIX = "Turb_hdf5_chk"
 PLOTFILE_PREFIX = "Turb_hdf5_plt_cnt"
@@ -35,6 +35,7 @@ PARTFILE_PREFIX = "Turb_hdf5_part"
 
 RHO_0 = 4.23e-21
 RES_DENS_FACTOR = 1.0
+LREFINE_MAX = 3
 
 KEEP_FILES_AT_SFE = np.linspace(0.01,0.20,20)
 
@@ -44,7 +45,7 @@ QUEUE = "normal"
 WALLTIME = "24:00:00"
 NCPUS = 528
 MEM = f"{NCPUS * 4}GB"
-NAME_JOB = "b2t"
+NAME_JOB = "b2tA"
 
 """
 ================================================================================
@@ -138,7 +139,7 @@ def submit_job(project=PROJECT, queue=QUEUE, walltime=WALLTIME, ncpus=NCPUS, mem
     job = open(path_jobscript, 'w')
 
     # to request more than more than one node one must request full nodes (multiples of 48)
-    if (ncpus > 48 and ncpus//48 != 0) :
+    if (ncpus > 48 and ncpus%48 != 0) :
         ncpus_gadi = 48*(ncpus//48 + 1)
         mem_gadi = f"{ncpus_gadi * 4}GB"
     else :
@@ -210,7 +211,8 @@ def first_sim(original_dir, seed=140281, depend=None):
                  plotFileIntervalTime="3.086e12",
                  particleFileIntervalTime="3.086e12",
                  tmax="6.173e13",
-                 usePolytrope=".false."
+                 usePolytrope=".false.",
+                 lrefine_max="1"
                  )
 
     # submit the simulation
@@ -338,6 +340,77 @@ def restart_grav2(original_dir, seed=140281, depend=None):
                         script_name="job.sh.init2", job_name=f"{NAME_JOB}_{seed}", prev_job_id=depend)
     return job_id
 
+def restart_gravamr(original_dir, seed=140281, fork=True, depend=None) :
+    """
+    submit the gravity simulation for the AMR simulation
+    """
+    # full path to the turbulence-only simulation
+    path_turb_sim = f"{original_dir}_{seed:06d}/"
+    path_flash_exe = os.path.join(path_turb_sim, "flash4")
+    path_flash_par = os.path.join(path_turb_sim, "flash.par")
+
+    # check whether all necessary files and directories exist
+    flash_par_exists = os.path.exists(path_flash_par)
+    turb_sim_exists = os.path.exists(path_turb_sim)
+    if not turb_sim_exists:
+        sys.exit(f"{path_turb_sim} does not exist")
+    elif not flash_par_exists:
+        sys.exit(f"{path_flash_par} does not exist")
+
+    # find the last checkfile
+    chkfiles = os.path.join(os.getcwd(), path_turb_sim, f"{CHKFILE_PREFIX}_????")
+    chkfile_last = dnam_tools.get_file(chkfiles, loc='last')
+
+    # if fork is turned on, create a new directory
+    if fork :
+        # create the directory for the sink simulation
+        new_dir = f"{original_dir}_{seed:06d}_sink/"
+        os.mkdir(new_dir)
+        print(f"{new_dir} created!")
+        # copy the flash executable and flash.par
+        shutil.copy2(path_flash_exe, new_dir)
+        shutil.copy2(path_flash_par, new_dir)
+        print("flash files copied!")
+
+        # create a symbolic link of the last checkfile
+        link_chkfile_last = os.path.join(new_dir, os.path.split(chkfile_last)[1])
+        cp = subprocess.run(["ln", "-s", chkfile_last, link_chkfile_last],
+                            capture_output=True, check=True, text=True)
+        print(f"checkfile link created at: {link_chkfile_last}")
+    # if fork is not turned on, just work on the turbulence directory
+    else :
+        new_dir = path_turb_sim
+
+    # read the last checkfile
+    h5t = h5tools.H5File(chkfile_last)
+
+    # modify the flash.par file
+    flash_par_new = os.path.join(new_dir, "flash.par")
+    replace_file(flash_par_new,
+                 useGravity=".true.",
+                 useParticles=".true.",
+                 restart=".true.",
+                 checkpointFileNumber=f"{h5t.params['checkpointfilenumber']}",
+                 plotFileNumber=f"{h5t.params['plotfilenumber']}",
+                 particleFileNumber=f"{h5t.params['plotfilenumber']}",
+                 plotFileIntervalTime="1.543e11",
+                 particleFileIntervalTime="1.543e11",
+                 tmax="3.086e14",
+                 res_rescale_dens=".true.",
+                 res_dens_factor=RES_DENS_FACTOR,
+                 rho_ambient=RHO_0*RES_DENS_FACTOR,
+                 lrefine_max=LREFINE_MAX
+                 )
+
+    # submit the simulation
+    stdout = "shell.out.gravinit"
+    action = f"cd {new_dir} \nmpirun -np {NCPUS} flash4_grav 1>{stdout} 2>&1"
+    job_id = submit_job(
+        project=PROJECT, queue=QUEUE, walltime=WALLTIME, ncpus=NCPUS, mem=MEM,
+        dir=new_dir, action=action, script_name="job.sh.gravinit",
+        job_name=f"{NAME_JOB}_gr_{seed}", prev_job_id=depend
+        )
+    return job_id
 
 def restart(original_dir, n_jobs, depend=None, flash_name=FLASH_EXE) :
     """
@@ -363,7 +436,7 @@ def restart(original_dir, n_jobs, depend=None, flash_name=FLASH_EXE) :
         action = ( f"cd {original_dir}\n"
                     "prep_restart.py -auto\n"
                    f"mpirun -np {NCPUS} {FLASH_EXE} 1>{stdout} 2>&1" )
-        job_name = f"{NAME_JOB}_{i}"
+        job_name = f"{NAME_JOB}_{original_dir[-6:]}_{i}"
         prev_job_id = submit_job(
             project=PROJECT, queue=QUEUE, walltime=WALLTIME, ncpus=NCPUS,
             mem=MEM, dir=original_dir, action=action, script_name=script_name,
@@ -461,11 +534,15 @@ if __name__ == "__main__":
                         help='submit a second restart for gravity simulation')
     parser.add_argument('--res_grav', action='store_true', default=False,
                         help='runs res_grav1 and res_grav2 at the same time')
+    parser.add_argument('--res_gravamr', action='store_true', default=False,
+                        help='submit a sink simulation for the AMR case')
     parser.add_argument('--clean', action='store_true', default=False,
                         help='clean most of the plotfile and particle files')
 
     parser.add_argument('--wo_plt', action='store_true', default=False,
                         help='do not produce the plt_cnt files')
+    parser.add_argument('--nofork', action='store_true', default=False,
+                        help='do not fork the gravity simulations')
     parser.add_argument('-depend', type=str, default=None,
                         help='the id of the depending job')
 
@@ -511,6 +588,13 @@ if __name__ == "__main__":
                 ncpus=2, mem="4GB", dir=cwd, action=action,
                 script_name=f"job.sh.rs2_{seed}", job_name=f"submit2_{seed}",
                 prev_job_id=job_id)
+
+    # submit the restart for the AMR gravity simulation
+    if args.res_gravamr:
+        for seed in args.seeds :
+            restart_gravamr(original_dir,
+                seed=seed, depend=args.depend, fork=(not args.nofork)
+                )
 
     # clean the files
     if args.clean :
