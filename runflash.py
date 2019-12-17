@@ -41,11 +41,11 @@ KEEP_FILES_AT_SFE = np.linspace(0.01,0.20,20)
 
 """ PARAMETERS - QSUB """
 PROJECT = "ek9"
-QUEUE = "normal"
-WALLTIME = "24:00:00"
+QUEUE = "express"
+WALLTIME = "04:00:00"
 NCPUS = 528
 MEM = f"{NCPUS * 4}GB"
-NAME_JOB = "b2tA"
+NAME_JOB = "s_128"
 
 """
 ================================================================================
@@ -404,7 +404,7 @@ def restart_gravamr(original_dir, seed=140281, fork=True, depend=None) :
 
     # submit the simulation
     stdout = "shell.out.gravinit"
-    action = f"cd {new_dir} \nmpirun -np {NCPUS} flash4_grav 1>{stdout} 2>&1"
+    action = f"cd {new_dir} \nmpirun -np {NCPUS} flash4 1>{stdout} 2>&1"
     job_id = submit_job(
         project=PROJECT, queue=QUEUE, walltime=WALLTIME, ncpus=NCPUS, mem=MEM,
         dir=new_dir, action=action, script_name="job.sh.gravinit",
