@@ -27,7 +27,7 @@ M_MAX = 100.0
 N_BINS = 30
 M_SHIFT_FACTOR = 1
 
-PLOT_TITLE = r'$\beta=1, \alpha_\mathrm{vir}=0.5, N=512^3$'
+PLOT_TITLE = r'$\beta=1, \alpha_\mathrm{vir}=0.775, N_\mathrm{base}=512^3$'
 IMF_TEXT = rf'$\mathrm{{SFE}} = {100*BUILD_IMF_AT_SFE:.0f}\%$'
 
 """
@@ -48,20 +48,22 @@ def proj_mpi(filename, filename_out, save=True, ax=plt.gca(), **kwargs) :
     i = filename_wo_ext.find("plt_cnt")
     filename_part = filename_wo_ext[:i]+'part'+filename_wo_ext[i+7:i+12]
     try :
-        pf = h5tools.PartFile(filename_part)
+        pf = h5tools.PartFile(filename_part, verbose=False)
+        print(f"particle file {filename_part} found!")
         part_exists = False if pf.particles is None else True
 
         # container for the constants
-        cst = CST(H5File=pf)
+        cst = measures.CST.fromH5File(pf)
     except OSError :
-        print(f"particle file {part_filename} not found...")
+        print(f"particle file {filename_part} not found...")
+        pf = h5tools.H5File(filename_plt, verbose=False)
         part_exists = False
 
         # container for the constants
-        cst = CST(filename=filename_plt)
+        cst = measures.CST.fromfile(filename_plt)
 
     dens_proj = h5f[proj_title]
-    xyz_lim = np.array(h5f['minmax_xyz']) / PC
+    xyz_lim = np.array(h5f['minmax_xyz']) / PC_flash
 
     if proj_axis == 'x' :
         xlabel, ylabel = (r'$y \,[\mathrm{pc}]$', r'$z \,[\mathrm{pc}]$')
@@ -135,7 +137,7 @@ def imfs(folders_regexp, filename_out, save=True, ax=plt.gca(), **kwargs) :
         i = 0
         while True :
             filename_part = filenames_part[i]
-            cst = measures.CST(filename=filename_part, verbose=False)
+            cst = measures.CST.fromfile(filename_part, verbose=False)
             SFE = cst.SFE
 
             print(f"{filename_part} read! SFE = {100*SFE:.2f}%...")
@@ -210,7 +212,7 @@ def sfrs(folders_regexp, filename_out, save=True, ax=plt.gca(), **kwargs) :
 
         filenames_plt = os.path.join(folder, 'Turb_hdf5_plt_cnt_????')
         try :
-            cst = measures.CST(filename=glob.glob(filenames_plt)[0])
+            cst = measures.CST.fromfile(glob.glob(filenames_plt)[0], verbose=False)
         except IndexError :
             print(f"plotfile does not exist in {folder}. skipping...")
             continue
@@ -291,7 +293,7 @@ if __name__ == "__main__" :
     # setting up the plotting environment
     print("initiating the plotting sequence...")
     mpltools.mpl_init()
-    matplotlib.rcParams['text.usetex'] = False
+    #matplotlib.rcParams['text.usetex'] = False
     fig = plt.figure(figsize=(8,7))
     ax = fig.add_subplot(111)
 
@@ -300,15 +302,15 @@ if __name__ == "__main__" :
         if args.o is not None :
             filename_out = args.o
         elif args.ext is not None :
-            filename_out = filename_wo_ext + '.' + args.ext
+            filename_out = filename.split(".")[0] + '.' + args.ext
         else :
-            filename_out = filename_wo_ext + '.png'
+            filename_out = filename.split(".")[0] + '.png'
 
         # plot the projection
         proj_mpi(filename, filename_out,
             ax=ax, title=PLOT_TITLE,
             colorbar_title=r"Column Density $[\mathrm{g}\,\mathrm{cm}^{-2}]$",
-            color_range=(0.01,0.5))
+            color_range=(0.005,0.5))
 
     if args.imfs :
         # the file name of the plot

@@ -40,12 +40,12 @@ LREFINE_MAX = 3
 KEEP_FILES_AT_SFE = np.linspace(0.01,0.20,20)
 
 """ PARAMETERS - QSUB """
-PROJECT = "ek9"
-QUEUE = "express"
-WALLTIME = "04:00:00"
+PROJECT = "jh2"
+QUEUE = "normal"
+WALLTIME = "24:00:00"
 NCPUS = 528
 MEM = f"{NCPUS * 4}GB"
-NAME_JOB = "s_128"
+NAME_JOB = "b1A"
 
 """
 ================================================================================
@@ -468,7 +468,7 @@ def clean_hdf5(original_dir, seed=140281, keep_files_at_sfe=KEEP_FILES_AT_SFE,
         partfile_deleted = None
 
         # check the SFE of the file
-        cst = measures.CST(filename=filenames_part[i], verbose=False)
+        cst = measures.CST.fromfile(filenames_part[i], verbose=False)
         SFE = cst.SFE
 
         # if there are no sinks, delete the previous file

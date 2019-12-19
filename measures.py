@@ -6,87 +6,91 @@ import argparse
 import numpy as np
 
 import h5tools
-from constants import *
+from constants import M_SOL, C_S, G, PC_flash
 
 class CST(object) :
     """
     container for the constants
-    one may calculate from the parameters passed on as a dictionary
-    or a h5tools.H5File object
+    call with keyword arguments (e.g. M_TOT=...) for the input
+
+    if you want to use h5tools.H5File object or a hdf5 file directly
+    use CST.fromfile(filename) or CST.fromH5File(h5file)
     """
     def __init__(self, H5File=None, filename=None, verbose=True, **params_custom) :
         # initial variables
-        M_TOT = 387.5 * M_SOL # total mass of the system
-        L = 2 * 3.086e18      # box length
-        C_S = 0.2e5           # isothermal sound speed
-        MACH = 5              # rms mach number
-        RHO = M_TOT / L**3    # mean density
-
-        G = 6.67408e-8        # gravitational constant
+        self.M_TOT = 387.5 * M_SOL  # total mass of the system
+        self.L = 2 * PC_flash       # box length
+        self.MACH = 5               # rms mach number
+        self.RHO = self.M_TOT / self.L**3     # mean density
+        self.SFE = 0.0              # star formation efficiency
 
         # read the custom parameters
         if 'L' in params_custom :
-            L = params_custom['L']
+            self.L = params_custom['L']
             if verbose :
-                print(f"L updated from kwargs to be: {L}")
-        if 'C_S' in params_custom :
-            C_S = params_custom['C_S']
-            if verbose :
-                print(f"C_S updated from kwargs to be: {C_S}")
+                print(f"L updated to be: {self.L}")
         if 'MACH' in params_custom :
-            MACH = params_custom['MACH']
+            self.MACH = params_custom['MACH']
             if verbose :
-                print(f"MACH updated from kwargs to be: {MACH}")
+                print(f"MACH updated to be: {self.MACH}")
+        if 'SFE' in params_custom :
+            self.SFE = params_custom['SFE']
+            if verbose :
+                print(f"SFE updated to be: {self.SFE}")
 
         if 'RHO' in params_custom :
-            RHO = params_custom['RHO']
+            self.RHO = params_custom['RHO']
             if verbose :
-                print(f"RHO updated from kwargs to be: {RHO}")
-            M_TOT = RHO * L**3
+                print(f"RHO updated to be: {self.RHO}")
+            self.M_TOT = self.RHO * self.L**3
         elif 'M_TOT' in params_custom :
-            M_TOT = params_custom['M_TOT']
+            self.M_TOT = params_custom['M_TOT']
             if verbose :
-                print(f"M_TOT updated from kwargs to be: {M_TOT}")
-            RHO = M_TOT / L**3
-
-        # create a H5File instance if a filename is given
-        if filename is not None :
-            try :
-                H5File = h5tools.H5File(filename, verbose=verbose)
-            except KeyError :
-                H5File = h5tools.PartFile(filename, verbose=verbose)
-
-        # read from the H5File instance if it exists
-        if H5File is not None :
-            if verbose :
-                print("using the H5File instance for the constants...")
-            L = H5File.params['L'][0]
-            RHO = H5File.params['rho_ambient']
-            M_TOT = L**3 * RHO
-            if verbose :
-                print(f"M_TOT updated from H5File to be: {M_TOT}")
-                print(f"L updated from H5File to be: {L}")
+                print(f"M_TOT updated to be: {self.M_TOT}")
+            self.RHO = self.M_TOT / self.L**3
 
         # store the variables
-        self.M_TOT = M_TOT
-        self.L = L
-        self.C_S = C_S
-        self.MACH = MACH
-        self.RHO = RHO
-
-        self.SIGMA_V = C_S * MACH # (3D) velocity dispersion
-        self.T_TURB = L / (2*self.SIGMA_V) # turbulent crossing time
+        self.SIGMA_V = C_S * self.MACH # (3D) velocity dispersion
+        self.T_TURB = self.L / (2*self.SIGMA_V) # turbulent crossing time
         self.T_FF = np.sqrt(3*np.pi/(32*G*self.RHO)) # free-fall time
-        self.VIR = (5*self.SIGMA_V**2*L/2)/(3*G*M_TOT) # virial parameter
+        self.VIR = (5*self.SIGMA_V**2*self.L/2)/(3*G*self.M_TOT) # virial parameter
+
+    @classmethod
+    def fromH5File(cls, H5File, verbose=True) :
+        if verbose :
+            print("using the H5File instance for the constants...")
+        # read the parameters from the h5file
+        L = H5File.params['L'][0]
+        RHO = H5File.params['rho_ambient']
 
         # if particle file is read, then calculate the SFE
         if isinstance(H5File, h5tools.PartFile) :
             if H5File.particles is None :
-                self.SFE = 0.0
+                SFE = 0.0
             else :
-                self.SFE = np.sum(H5File.particles['mass']) / M_TOT
+                SFE = np.sum(H5File.particles['mass']) / M_TOT
         else :
-            self.SFE = None
+            SFE = 0.0
+
+        return cls(L=L, RHO=RHO, verbose=verbose, SFE=SFE)
+
+    @classmethod
+    def fromfile(cls, filename, verbose=True) :
+        if verbose :
+            print(f"reading {filename}...")
+
+        # create a H5File instance if a filename is given
+        try :
+            H5File = h5tools.H5File(filename, verbose=verbose)
+            if verbose :
+                print("created a H5File instance! passing it...")
+        except KeyError :
+            H5File = h5tools.PartFile(filename, verbose=verbose)
+            if verbose :
+                print("created a PartFile instance! passing it...")
+
+        # call the fromH5File init function
+        return cls.fromH5File(H5File, verbose=verbose)
 
     def show(self) :
         """
