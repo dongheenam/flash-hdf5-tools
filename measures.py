@@ -33,10 +33,6 @@ class CST(object) :
             self.MACH = params_custom['MACH']
             if verbose :
                 print(f"MACH updated to be: {self.MACH}")
-        if 'SFE' in params_custom :
-            self.SFE = params_custom['SFE']
-            if verbose :
-                print(f"SFE updated to be: {self.SFE}")
 
         if 'RHO' in params_custom :
             self.RHO = params_custom['RHO']
@@ -49,6 +45,11 @@ class CST(object) :
                 print(f"M_TOT updated to be: {self.M_TOT}")
             self.RHO = self.M_TOT / self.L**3
 
+        if 'M_PARTTOT' in params_custom :
+            self.SFE = params_custom['M_PARTTOT'] / self.M_TOT
+            if verbose :
+                print(f"SFE updated to be: {self.SFE}")
+        
         # store the variables
         self.SIGMA_V = C_S * self.MACH # (3D) velocity dispersion
         self.T_TURB = self.L / (2*self.SIGMA_V) # turbulent crossing time
@@ -66,13 +67,13 @@ class CST(object) :
         # if particle file is read, then calculate the SFE
         if isinstance(H5File, h5tools.PartFile) :
             if H5File.particles is None :
-                SFE = 0.0
+                M_PARTTOT = 0.0
             else :
-                SFE = np.sum(H5File.particles['mass']) / M_TOT
+                M_PARTTOT = np.sum(H5File.particles['mass'])
         else :
-            SFE = 0.0
+            M_PARTTOT = 0.0
 
-        return cls(L=L, RHO=RHO, verbose=verbose, SFE=SFE)
+        return cls(L=L, RHO=RHO, verbose=verbose, M_PARTTOT=M_PARTTOT)
 
     @classmethod
     def fromfile(cls, filename, verbose=True) :
