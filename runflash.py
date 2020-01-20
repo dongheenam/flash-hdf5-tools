@@ -18,10 +18,10 @@ import h5tools
 """ PARAMETERS - forcing generator """
 PATH_FORCING_GEN = "/home/100/dn8909/source/forcing_generator/"
 
-ST_POWER_LAW_EXP = "-2.0"
+ST_POWER_LAW_EXP = "0.2"
 VELOCITY = "1.0e5"
-#ST_ENERGY = "1.03e-2 * velocity**3/L" # for beta=1 (0.82e-2 for UG)
-ST_ENERGY = "1.7e-2 * velocity**3/L" # for beta=2
+ST_ENERGY = "1.03e-2 * velocity**3/L" # for beta=1 (0.82e-2 for UG)
+#ST_ENERGY = "1.7e-2 * velocity**3/L" # for beta=2
 ST_STIRMAX = "(256+eps) * twopi/L"
 
 """ PARAMETERS - FLASH """
@@ -33,19 +33,19 @@ CHKFILE_PREFIX = "Turb_hdf5_chk"
 PLOTFILE_PREFIX = "Turb_hdf5_plt_cnt"
 PARTFILE_PREFIX = "Turb_hdf5_part"
 
-RHO_0 = 4.23e-21
+RHO_0 = 6.557E-21
 RES_DENS_FACTOR = 1.0
 LREFINE_MAX = 3
 
 KEEP_FILES_AT_SFE = np.linspace(0.01,0.20,20)
 
 """ PARAMETERS - QSUB """
-PROJECT = "jh2"
+PROJECT = "ek9"
 QUEUE = "normal"
-WALLTIME = "24:00:00"
+WALLTIME = "12:00:00"
 NCPUS = 528
 MEM = f"{NCPUS * 4}GB"
-NAME_JOB = "b1A"
+NAME_JOB = "b1As"
 
 """
 ================================================================================
@@ -212,12 +212,12 @@ def first_sim(original_dir, seed=140281, depend=None):
                  particleFileIntervalTime="3.086e12",
                  tmax="6.173e13",
                  usePolytrope=".false.",
-                 lrefine_max="1"
+                 rho_ambient=RHO_0
                  )
 
     # submit the simulation
     stdout = "shell.out"
-    action = f"cd {new_dir} \nmpirun -np {NCPUS} flash4 1>{stdout} 2>&1"
+    action = f"cd {new_dir} \nmpirun -x UCX_TLS=rc -np {NCPUS} flash4 1>{stdout} 2>&1"
     job_id = submit_job(project=PROJECT, queue=QUEUE, walltime=WALLTIME,
                         ncpus=NCPUS, mem=MEM, dir=new_dir, action=action,
                         script_name="job.sh", job_name=NAME_JOB+f"_{seed}", prev_job_id=depend)
@@ -292,7 +292,7 @@ def restart_grav1(original_dir, seed=140281, depend=None, wo_plt=False):
 
     # submit the simulation
     stdout = "shell.out.init"
-    action = f"cd {new_dir} \nmpirun -np {NCPUS} flash4_grav 1>{stdout} 2>&1"
+    action = f"cd {new_dir} \nmpirun -x UCX_TLS=rc -np {NCPUS} flash4_grav 1>{stdout} 2>&1"
     job_id = submit_job(project=PROJECT, queue=QUEUE, walltime="02:00:00",
                         ncpus=NCPUS, mem=MEM, dir=new_dir, action=action,
                         script_name="job.sh.init", job_name=f"gr1_{seed}", prev_job_id=depend)
@@ -334,7 +334,7 @@ def restart_grav2(original_dir, seed=140281, depend=None):
 
     # submit the simulation
     stdout = "shell.out.init2"
-    action = f"cd {new_dir} \nmpirun -np {NCPUS} flash4_grav 1>{stdout} 2>&1"
+    action = f"cd {new_dir} \nmpirun -x UCX_TLS=rc -np {NCPUS} flash4_grav 1>{stdout} 2>&1"
     job_id = submit_job(project=PROJECT, queue=QUEUE, walltime=WALLTIME,
                         ncpus=NCPUS, mem=MEM, dir=new_dir, action=action,
                         script_name="job.sh.init2", job_name=f"{NAME_JOB}_{seed}", prev_job_id=depend)
@@ -404,7 +404,7 @@ def restart_gravamr(original_dir, seed=140281, fork=True, depend=None) :
 
     # submit the simulation
     stdout = "shell.out.gravinit"
-    action = f"cd {new_dir} \nmpirun -np {NCPUS} flash4 1>{stdout} 2>&1"
+    action = f"cd {new_dir} \nmpirun -x UCX_TLS=rc -np {NCPUS} flash4 1>{stdout} 2>&1"
     job_id = submit_job(
         project=PROJECT, queue=QUEUE, walltime=WALLTIME, ncpus=NCPUS, mem=MEM,
         dir=new_dir, action=action, script_name="job.sh.gravinit",
@@ -435,8 +435,8 @@ def restart(original_dir, n_jobs, depend=None, flash_name=FLASH_EXE) :
         stdout = f"shell.out{i:02d}"
         action = ( f"cd {original_dir}\n"
                     "prep_restart.py -auto\n"
-                   f"mpirun -np {NCPUS} {FLASH_EXE} 1>{stdout} 2>&1" )
-        job_name = f"{NAME_JOB}_{original_dir[-6:]}_{i}"
+                   f"mpirun -x UCX_TLS=rc -np {NCPUS} {FLASH_EXE} 1>{stdout} 2>&1" )
+        job_name = f{"original_dir[:-3]}_{i}"
         prev_job_id = submit_job(
             project=PROJECT, queue=QUEUE, walltime=WALLTIME, ncpus=NCPUS,
             mem=MEM, dir=original_dir, action=action, script_name=script_name,
