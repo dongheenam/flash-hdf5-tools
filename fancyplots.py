@@ -27,7 +27,7 @@ M_MAX = 100.0
 N_BINS = 30
 M_SHIFT_FACTOR = 1
 
-PLOT_TITLE = r'$\beta=1, \alpha_\mathrm{vir}=0.775, N_\mathrm{base}=512^3$'
+PLOT_TITLE = r'$\mathcal{P}_v\propto k^{-1}, \alpha_\mathrm{vir}=0.5, N=512^3-2048^3$'
 IMF_TEXT = rf'$\mathrm{{SFE}} = {100*BUILD_IMF_AT_SFE:.0f}\%$'
 
 """
@@ -41,7 +41,8 @@ def proj_mpi(filename, filename_out, save=True, ax=plt.gca(), **kwargs) :
 
     filename_wo_ext = filename.split(".")[0]
     proj_axis = filename_wo_ext[-1]
-    proj_title = "_".join(filename_wo_ext.split("_")[-3:-1])
+    #proj_title = "_".join(filename_wo_ext.split("_")[-3:-1])
+    proj_title = 'dens_proj'
     filename_plt = "_".join(filename_wo_ext.split("_")[:-3])
 
     # find for a particle file assiciated with the proj_mpi result
@@ -310,7 +311,7 @@ if __name__ == "__main__" :
         proj_mpi(filename, filename_out,
             ax=ax, title=PLOT_TITLE,
             colorbar_title=r"Column Density $[\mathrm{g}\,\mathrm{cm}^{-2}]$",
-            color_range=(0.005,0.5))
+            color_range=(0.01,0.3), shift=(True,False))
 
     if args.imfs :
         # the file name of the plot

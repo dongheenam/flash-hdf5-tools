@@ -94,15 +94,15 @@ def plot_1D(x, y,
 
     if not overplot :
         # set the log scale
-        if log is True :
-            ax.set_xscale("log")
-            ax.set_yscale("log")
-        elif log is False :
-            pass
-        else :
+        try :
             if log[0] is True :
                 ax.set_xscale("log")
             if log[1] is True :
+                ax.set_yscale("log")
+
+        except TypeError :
+            if log is True :
+                ax.set_xscale("log")
                 ax.set_yscale("log")
 
         # set the axes ranges
@@ -331,7 +331,7 @@ def plot_hist(data,
 def plot_proj(proj, ax=plt.gca(), overplot=False,
               xrange=None, yrange=None, xlabel=None, ylabel=None,
               title=None, colorbar=False, colorbar_title=None, annotation=None,
-              log=False, color_range=[None,None], **imshow_kwargs) :
+              log=False, shift=False, color_range=[None,None], **imshow_kwargs):
     """
     DESCRIPTION
         Plots a projection plot atop the specified axis
@@ -359,6 +359,8 @@ def plot_proj(proj, ax=plt.gca(), overplot=False,
             extra text to be displayed as anchored text
         log (boolean)
             set logarithmic colormap
+        shift (boolean or array_like[2])
+            shifts the x or y axis (a single boolean with control both)
         color_range (array_like[2])
             minimum and maximum values to be plotted for imshow
 
@@ -378,13 +380,27 @@ def plot_proj(proj, ax=plt.gca(), overplot=False,
     else :
         norm = None
 
+    # transpose the image so that axes.imshow will work properly
+    image = np.transpose(proj)
+
+    # shift the image if necessary
+    try :
+        if shift[0] is True :
+            image = np.roll(image, image.shape[0]//2, axis=1)
+        if shift[1] is True :
+            image = np.roll(image, image.shape[1]//2, axis=0)
+    except TypeError :
+        if shift is True :
+            image = np.roll(image, (n//2 for n in image.shape))
+
+    # set the physical size of the image
     if (xrange is not None) and (yrange is not None) :
         extent = [xrange[0], xrange[1], yrange[0], yrange[1]]
     else :
         extent = None
 
     # plot the projection data
-    im = ax.imshow(np.transpose(proj),
+    im = ax.imshow(image,
                    norm=norm, origin='lower', cmap='magma', aspect='equal',
                    vmin=color_range[0], vmax=color_range[1], extent=extent,
                    **imshow_kwargs)
