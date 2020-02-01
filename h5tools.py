@@ -628,7 +628,7 @@ class PartFile(object):
             print(f"resolution     : {self.params['dims']}")
             print(f"domain         : {self.params['L']}")
             print(f"No. of sinks   : {n_parts}")
-            print(f"Mass of sinks  : {total_mass} solar masses")
+            print(f"Mass of sinks  : {total_mass:.3f} solar masses")
 
     def read_parts(self):
         # names of the particle parameters
