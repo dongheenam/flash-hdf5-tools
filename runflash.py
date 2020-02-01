@@ -34,7 +34,7 @@ PLOTFILE_PREFIX = "Turb_hdf5_plt_cnt"
 PARTFILE_PREFIX = "Turb_hdf5_part"
 
 RHO_0 = 6.557E-21
-RES_DENS_FACTOR = 1.0
+RES_DENS_FACTOR = 2.0
 LREFINE_MAX = 3
 
 KEEP_FILES_AT_SFE = np.linspace(0.01,0.20,20)
@@ -42,10 +42,10 @@ KEEP_FILES_AT_SFE = np.linspace(0.01,0.20,20)
 """ PARAMETERS - QSUB """
 PROJECT = "ek9"
 QUEUE = "normal"
-WALLTIME = "12:00:00"
+WALLTIME = "24:00:00"
 NCPUS = 528
 MEM = f"{NCPUS * 4}GB"
-NAME_JOB = "b1As"
+NAME_JOB = "b1A"
 
 """
 ================================================================================
@@ -416,6 +416,11 @@ def restart(original_dir, n_jobs, depend=None, flash_name=FLASH_EXE) :
     """
     submit the jobs multiple times for easier restart
     """
+    # turn off density rescaling
+    replace_file(f"{original_dir}/flash.par",
+                 res_rescale_dens='.false.'
+                 )
+    
     print(f"initialising {n_jobs} restarts at {original_dir}...")
     # check if job.sh exists already
     jobshs = os.path.join(original_dir, "job[0-9]*.sh")
@@ -436,7 +441,7 @@ def restart(original_dir, n_jobs, depend=None, flash_name=FLASH_EXE) :
         action = ( f"cd {original_dir}\n"
                     "prep_restart.py -auto\n"
                    f"mpirun -x UCX_TLS=rc -np {NCPUS} {FLASH_EXE} 1>{stdout} 2>&1" )
-        job_name = f{"original_dir[:-3]}_{i}"
+        job_name = f"{original_dir[4:-3]}_{i}"
         prev_job_id = submit_job(
             project=PROJECT, queue=QUEUE, walltime=WALLTIME, ncpus=NCPUS,
             mem=MEM, dir=original_dir, action=action, script_name=script_name,
