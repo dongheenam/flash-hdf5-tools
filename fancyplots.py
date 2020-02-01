@@ -24,18 +24,21 @@ import mpltools
 BUILD_IMF_AT_SFE = 0.10
 M_MIN = 0.01
 M_MAX = 100.0
-N_BINS = 30
+N_BINS = 20
 M_SHIFT_FACTOR = 1
 
-PLOT_TITLE = r'$\mathcal{P}_v\propto k^{-1}, \alpha_\mathrm{vir}=0.5, N=512^3-2048^3$'
+PLOT_TITLE = r'$E_v\propto k^{-1}, \alpha_\mathrm{vir}=0.25, N=512^3-2048^3$'
 IMF_TEXT = rf'$\mathrm{{SFE}} = {100*BUILD_IMF_AT_SFE:.0f}\%$'
+
+SHIFT_X = False
+SHIFT_Y = False
 
 """
 ================================================================================
-Macro Funcitons
+Macro Functions
 ================================================================================
 """
-def proj_mpi(filename, filename_out, save=True, ax=plt.gca(), **kwargs) :
+def proj_mpi(filename, filename_out, save=True, ax=plt.gca(), shift=(False,False), **kwargs) :
     print(f"plotting the projected field from {filename}...")
     h5f = h5py.File(filename, 'r')
 
@@ -63,7 +66,8 @@ def proj_mpi(filename, filename_out, save=True, ax=plt.gca(), **kwargs) :
         # container for the constants
         cst = measures.CST.fromfile(filename_plt)
 
-    dens_proj = h5f[proj_title]
+    # read the density data 
+    dens_proj = np.transpose(h5f[proj_title])
     xyz_lim = np.array(h5f['minmax_xyz']) / PC_flash
 
     if proj_axis == 'x' :
@@ -89,6 +93,16 @@ def proj_mpi(filename, filename_out, save=True, ax=plt.gca(), **kwargs) :
         part_xlocs = []
         part_ylocs = []
 
+    #try :
+    if shift[0] is True :
+        print("shifting the x axis...")
+        part_xlocs += (xrange[1]-xrange[0])/2
+        part_xlocs = [np.mod(x-xrange[0],xrange[1]-xrange[0])+xrange[0] for x in part_xlocs]
+    if shift[1] is True :
+        print("shifting the y axis...")
+        part_ylocs += (yrange[1]-yrange[0])/2
+        part_ylocs = [np.mod(y-yrange[0],yrange[1]-yrange[0])+yrange[0] for y in part_ylocs]
+
     time_in_T = pf.params['time'] / cst.T_TURB
     time_in_Tff = pf.params['time'] / cst.T_FF
     SFE = 100.0* np.sum(pf.particles['mass']) / cst.M_TOT if part_exists else 0.0
@@ -100,9 +114,9 @@ def proj_mpi(filename, filename_out, save=True, ax=plt.gca(), **kwargs) :
                    rf'&N_\mathrm{{sink}}={N_sink} \end{{align*}}' )
     mpltools.plot_proj(dens_proj, ax=ax,
         xrange=xrange, yrange=yrange, xlabel=xlabel, ylabel=ylabel,
-        annotation=annotation, log=True, colorbar=True, **kwargs)
+        annotation=annotation, log=True, colorbar=True, shift=shift, **kwargs)
 
-    mpltools.plot_scatter(part_ylocs, part_xlocs, ax=ax,
+    mpltools.plot_scatter(part_xlocs, part_ylocs, ax=ax,
         xrange=xrange, yrange=yrange,
         overplot=True, marker=r'$\odot$', s=80, color='limegreen')
 
@@ -111,7 +125,7 @@ def proj_mpi(filename, filename_out, save=True, ax=plt.gca(), **kwargs) :
         print(f"plot saved to: {filename_out}")
 #enddef proj_mpi
 
-def imfs(folders_regexp, filename_out, save=True, ax=plt.gca(), **kwargs) :
+def imfs(folders_regexp, filename_out, save=True, ax=plt.gca(), label="", **kwargs) :
     # find all the folders matching the regular expression
     print(f"received the regexp {folders_regexp}...")
     folders = glob.glob(folders_regexp)
@@ -141,16 +155,16 @@ def imfs(folders_regexp, filename_out, save=True, ax=plt.gca(), **kwargs) :
             cst = measures.CST.fromfile(filename_part, verbose=False)
             SFE = cst.SFE
 
-            print(f"{filename_part} read! SFE = {100*SFE:.2f}%...")
+            print(f"{filename_part} read! SFE = {100*SFE:.2f}%...", end='\r')
             if SFE < BUILD_IMF_AT_SFE :
                 i += 1
                 if i == len(filenames_part) :
-                    print("this simulation did not reach the specified SFE!")
+                    print("\nthis simulation did not reach the specified SFE!")
                     break
                 continue
             else :
                 pf = h5tools.PartFile(filename_part, verbose=False)
-                print(f"appending {len(pf.particles)} sinks to the IMF...")
+                print(f"\nappending {len(pf.particles)} sinks to the IMF...")
                 part_masses = np.append(part_masses, pf.particles['mass'])
                 print(f"number of sinks so far : {len(part_masses)}")
                 break
@@ -167,24 +181,24 @@ def imfs(folders_regexp, filename_out, save=True, ax=plt.gca(), **kwargs) :
     logbins = np.logspace(np.log10(m_min),np.log10(m_max),n_bins)
 
     # annotation
+    label += rf" $(N_\mathrm{{sink}}={len(masses_in_msol)},\mathrm{{SFE}}={100*BUILD_IMF_AT_SFE:.0f}\%)$"
     #annotation = ( rf'\begin{{align*}}'
     #               rf'&\mathrm{{SFE}}={BUILD_IMF_AT_SFE:.0f}\%\\ '
     #               rf'&N_\mathrm{{sink}}={len(masses_in_msol)} \end{{align*}}' )
-    annotation = f"sinks:{len(masses_in_msol)}, SFE={100*BUILD_IMF_AT_SFE:.0f}%"
 
     # plot the IMF
     print("plotting...")
-    mpltools.plot_hist(masses_in_msol, ax=ax,
-        annotation=annotation, bins=logbins, log=True,
-        xrange=(m_min,m_max), yrange=(0.5, 50),
+    mpltools.plot_hist(masses_in_msol, ax=ax, bins=logbins, log=True,
+        xrange=(m_min,m_max), yrange=(0.9, 200),
         xlabel=r'$M\,[M_\odot]$', ylabel=r'$\dfrac{dN}{d\log{M}}$',
-        **kwargs)
+        label=label, **kwargs)
     # salpeter slope
-    ax.plot(logbins, 3*(logbins/m_max)**(-1.35), color='red', linestyle='--')
+    ax.plot(logbins, 5e-1*(logbins/m_max)**(-1.35), color='red', linestyle='--')
     print("plotting complete!")
 
     # export the plot
     if save :
+        plt.legend(prop={'size': 14})
         plt.savefig(filename_out)
         print("IMF printed to: "+filename_out)
 #enddef imfs
@@ -311,7 +325,7 @@ if __name__ == "__main__" :
         proj_mpi(filename, filename_out,
             ax=ax, title=PLOT_TITLE,
             colorbar_title=r"Column Density $[\mathrm{g}\,\mathrm{cm}^{-2}]$",
-            color_range=(0.01,0.3), shift=(True,False))
+            color_range=(0.02,1.0), shift=(SHIFT_X,SHIFT_Y))
 
     if args.imfs :
         # the file name of the plot
@@ -323,8 +337,15 @@ if __name__ == "__main__" :
             filename_out = filename + '_imf.png'
 
         # plot the imf
-        imfs(filename, filename_out,
+        label_1 = r"$E_v \propto k^{-1}$"
+        label_2 = r"$E_v \propto k^{-2}$"
+        imfs("AMR_beta1_512_??????_sink", filename_out, label=label_1,
+            ax=ax, title=PLOT_TITLE, histtype='step', color='blue', linewidth=2, save=False)
+        imfs("AMR_beta2_512_??????_sink", filename_out, label=label_2,
             ax=ax, title=PLOT_TITLE, histtype='step', color='black', linewidth=2)
+
+        #imfs(filename, filename_out, label=label_1,
+        #    ax=ax, title=PLOT_TITLE, histtype='step', color='black', linewidth=2)
 
     if args.machs :
         pass
