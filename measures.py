@@ -49,7 +49,7 @@ class CST(object) :
             self.SFE = params_custom['M_PARTTOT'] / self.M_TOT
             if verbose :
                 print(f"SFE updated to be: {self.SFE}")
-        
+
         # store the variables
         self.SIGMA_V = C_S * self.MACH # (3D) velocity dispersion
         self.T_TURB = self.L / (2*self.SIGMA_V) # turbulent crossing time
@@ -111,7 +111,7 @@ if __name__ == "__main__" :
 
     # create the instance
     print("initialising constants.py...")
-    cst = CST(filename=args.filename)
+    cst = CST.fromfile(args.filename)
     print("...completed!")
 
     # print the constants and exit
