@@ -12,6 +12,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import h5py
 
+import bayestools
 from constants import M_SOL, PC_flash
 import measures
 import h5tools
@@ -21,14 +22,15 @@ import mpltools
 
 
 """ CONSTNATS - IMF """
-BUILD_IMF_AT_SFE = 0.10
-M_MIN = 0.01
-M_MAX = 100.0
+M_MIN = 5e-3
+M_MAX = 1e2
 N_BINS = 20
-M_SHIFT_FACTOR = 1
+SAL_LOC = (4e0, 3e-1)
 
-PLOT_TITLE = r'$E_v\propto k^{-1}, \alpha_\mathrm{vir}=0.25, N=512^3-2048^3$'
-IMF_TEXT = rf'$\mathrm{{SFE}} = {100*BUILD_IMF_AT_SFE:.0f}\%$'
+PLOT_TITLE = r'$\alpha_\mathrm{vir}=0.25, N=512^3-2048^3$'
+#PLOT_TITLE = r"$E_v\propto k^{-1}," + PLOT_TITLE[1:]
+PLOT_TITLE = PLOT_TITLE[:-1] + r",\mathrm{SFE}=10\%$"
+PLOT_CDF = False
 
 SHIFT_X = False
 SHIFT_Y = False
@@ -66,7 +68,7 @@ def proj_mpi(filename, filename_out, save=True, ax=plt.gca(), shift=(False,False
         # container for the constants
         cst = measures.CST.fromfile(filename_plt)
 
-    # read the density data 
+    # read the density data
     dens_proj = np.transpose(h5f[proj_title])
     xyz_lim = np.array(h5f['minmax_xyz']) / PC_flash
 
@@ -125,80 +127,86 @@ def proj_mpi(filename, filename_out, save=True, ax=plt.gca(), shift=(False,False
         print(f"plot saved to: {filename_out}")
 #enddef proj_mpi
 
-def imfs(folders_regexp, filename_out, save=True, ax=plt.gca(), label="", **kwargs) :
-    # find all the folders matching the regular expression
-    print(f"received the regexp {folders_regexp}...")
-    folders = glob.glob(folders_regexp)
-    folders.sort()
-    print(f"folders found: {folders}")
-    if len(folders) == 0 :
-        sys.exit("no folders matching the expression! exitting...")
-
-    # find the particle files
-    part_masses = np.array([], dtype='f8')
-    print(f"finding the particle files with SFE={BUILD_IMF_AT_SFE}...")
-    for folder in folders :
-        print(f"inspecting {folder}...")
-        filenames_part = glob.glob(
-            os.path.join(folder, "Turb_hdf5_part_????"))
-        filenames_part.sort()
-        n_files = len(filenames_part)
-        if n_files == 0 :
-            print("no particle files! moving on...")
-            continue
-        else :
-            print(f"{n_files} particle files found!")
-
-        i = 0
-        while True :
-            filename_part = filenames_part[i]
-            cst = measures.CST.fromfile(filename_part, verbose=False)
-            SFE = cst.SFE
-
-            print(f"{filename_part} read! SFE = {100*SFE:.2f}%...", end='\r')
-            if SFE < BUILD_IMF_AT_SFE :
-                i += 1
-                if i == len(filenames_part) :
-                    print("\nthis simulation did not reach the specified SFE!")
-                    break
-                continue
-            else :
-                pf = h5tools.PartFile(filename_part, verbose=False)
-                print(f"\nappending {len(pf.particles)} sinks to the IMF...")
-                part_masses = np.append(part_masses, pf.particles['mass'])
-                print(f"number of sinks so far : {len(part_masses)}")
-                break
-        # endfor filenames_part
-    # endfor folders
-
-    # in terms of solar masses
+def imfs(filename_imf, filename_out,
+         plot_cdf=False, save=True, ax=plt.gca(), label="", **kwargs) :
+    # read the imf file
+    h5f = h5py.File(filename_imf, 'r')
+    part_masses = np.array(h5f['mass'])
     masses_in_msol = part_masses / M_SOL
-
-    # set up the bins
-    m_min = M_MIN *M_SHIFT_FACTOR
-    m_max = M_MAX *M_SHIFT_FACTOR
-    n_bins = N_BINS
-    logbins = np.logspace(np.log10(m_min),np.log10(m_max),n_bins)
+    n_sink = len(masses_in_msol)
 
     # annotation
-    label += rf" $(N_\mathrm{{sink}}={len(masses_in_msol)},\mathrm{{SFE}}={100*BUILD_IMF_AT_SFE:.0f}\%)$"
-    #annotation = ( rf'\begin{{align*}}'
-    #               rf'&\mathrm{{SFE}}={BUILD_IMF_AT_SFE:.0f}\%\\ '
-    #               rf'&N_\mathrm{{sink}}={len(masses_in_msol)} \end{{align*}}' )
+    label += rf" $(N_\mathrm{{sink}}={n_sink})$"
 
-    # plot the IMF
-    print("plotting...")
-    mpltools.plot_hist(masses_in_msol, ax=ax, bins=logbins, log=True,
-        xrange=(m_min,m_max), yrange=(0.9, 200),
-        xlabel=r'$M\,[M_\odot]$', ylabel=r'$\dfrac{dN}{d\log{M}}$',
-        label=label, **kwargs)
-    # salpeter slope
-    ax.plot(logbins, 5e-1*(logbins/m_max)**(-1.35), color='red', linestyle='--')
-    print("plotting complete!")
+    # set up the bins
+    bins = np.zeros(n_sink+2)
+    bins[0] = M_MIN
+    bins[1:-1] = np.sort(masses_in_msol)
+    bins[-1] = M_MAX
+
+    # make the cdf
+    cdf = np.zeros(n_sink+2)
+    cdf[0] = 0.0
+    cdf[1:-1] = np.arange(n_sink) / n_sink
+    cdf[-1] = 1.0
+
+    # fit the cdf
+    fitting_range = [(0.8<x<10.0) for x in bins]
+    bins_tofit = bins[fitting_range]
+    cdf_tofit = cdf[fitting_range]
+    fit_params = bayestools.fit_cdf(
+        bins_tofit, cdf_tofit, np.zeros(len(bins_tofit)))
+
+    # plot the cdf
+    if plot_cdf is True :
+        print("plotting cdf...")
+        mpltools.plot_1D(ax.step, bins, cdf,
+            ax=ax, xrange=(M_MIN,M_MAX), log=(True,False),
+            xlabel=r'$M\,[M_\odot]$', ylabel='CDF',
+            label=label, where='pre', **kwargs)
+
+        # fitted slope
+        a, b, ln_f = fit_params[:,0]
+        ax.plot(bins_tofit, 1 - a*bins_tofit**b,
+            color=kwargs['color'],linestyle='--', linewidth=2)
+
+        print("plotting completed!")
+
+    # plot the pdf
+    else :
+        # set up the bins
+        logbins = np.logspace(np.log10(M_MIN),np.log10(M_MAX),N_BINS)
+
+        # create histogram and normalise it
+        log_imf, _ = np.histogram(masses_in_msol, bins=logbins)
+        bin_widths = np.diff(logbins)
+        bin_medians = (logbins[1:]+logbins[:-1])/2
+        imf = log_imf / bin_medians
+        norm_factor = np.sum(imf*bin_widths)
+
+        log_imf = log_imf / norm_factor
+
+        # plot the IMF
+        print("plotting imf...")
+        mpltools.plot_1D(ax.step, bin_medians, log_imf,
+            ax=ax, log=True, xrange=(M_MIN,M_MAX),
+            xlabel=r'$M\,[M_\odot]$', ylabel=r'$\dfrac{dN}{d\log{M}}$',
+            label=label, where='pre', **kwargs)
+
+        # fitted slope
+        a, b, ln_f = fit_params[:,0]
+        ax.plot(bins_tofit, -a*b*bins_tofit**b,
+            color=kwargs['color'], linestyle='--', linewidth=2)
+
+        # salpeter slope
+        if save :
+            ax.plot(logbins, SAL_LOC[1]*(logbins/SAL_LOC[0])**(-1.35),
+                    color='red', linestyle='--', label="Salpeter")
+        print("plotting complete!")
 
     # export the plot
     if save :
-        plt.legend(prop={'size': 14})
+        plt.legend(loc='upper left', prop={'size': 16})
         plt.savefig(filename_out)
         print("IMF printed to: "+filename_out)
 #enddef imfs
@@ -248,8 +256,8 @@ def sfrs(folders_regexp, filename_out, save=True, ax=plt.gca(), **kwargs) :
         #SFR_in_Tff = savgol_filter(SFR_in_Tff, 11, 2)
 
         # plot SFR vs SFE
-        mpltools.plot_1D(SFEs[1:]*100.0, SFR_in_Tff,
-            ax=ax, overplot=overplot, xrange=(0.0, 20.0), yrange=(0.0, 1.00),
+        mpltools.plot_1D(ax.plot, SFEs[1:]*100.0, SFR_in_Tff,
+            overplot=overplot, xrange=(0.0, 20.0), yrange=(0.0, 1.00),
             xlabel='SFE [%]', ylabel='SFR_ff', alpha=0.2, linewidth=2)
         # plot SFR vs t_FF
         #mpltools.plot_1D(time_in_Tff[1:], SFR_in_Tff,
@@ -288,7 +296,9 @@ if __name__ == "__main__" :
     parser.add_argument('--imf', action='store_true', default=False,
                         help='Set this flag to plot the IMF from the particle file')
     parser.add_argument('--imfs', action='store_true', default=False,
-                        help='Build IMF from all folders that match the regexp')
+                        help='Build IMF from the particle data')
+    parser.add_argument('--cdfs', action='store_true', default=False,
+                        help='Build CDF from the particle data')
     parser.add_argument('--machs', action='store_true', default=False,
                         help='Plot Mach numbers from all folders that match the regexp')
     parser.add_argument('--sfrs', action='store_true', default=False,
@@ -327,7 +337,7 @@ if __name__ == "__main__" :
             colorbar_title=r"Column Density $[\mathrm{g}\,\mathrm{cm}^{-2}]$",
             color_range=(0.02,1.0), shift=(SHIFT_X,SHIFT_Y))
 
-    if args.imfs :
+    if args.imfs or args.cdfs :
         # the file name of the plot
         if args.o is not None :
             filename_out = args.o
@@ -339,13 +349,14 @@ if __name__ == "__main__" :
         # plot the imf
         label_1 = r"$E_v \propto k^{-1}$"
         label_2 = r"$E_v \propto k^{-2}$"
-        imfs("AMR_beta1_512_??????_sink", filename_out, label=label_1,
-            ax=ax, title=PLOT_TITLE, histtype='step', color='blue', linewidth=2, save=False)
-        imfs("AMR_beta2_512_??????_sink", filename_out, label=label_2,
-            ax=ax, title=PLOT_TITLE, histtype='step', color='black', linewidth=2)
-
-        #imfs(filename, filename_out, label=label_1,
-        #    ax=ax, title=PLOT_TITLE, histtype='step', color='black', linewidth=2)
+        if args.cdfs :
+            alpha = 0.5
+        else :
+            alpha = 1.0
+        imfs("parts_beta1_sfe0.1.h5", filename_out, label=label_1,
+            ax=ax, plot_cdf=args.cdfs, color='blue', linewidth=2, alpha=alpha, save=False)
+        imfs("parts_beta2_sfe0.1.h5", filename_out, label=label_2,
+            ax=ax, plot_cdf=args.cdfs, title=PLOT_TITLE, color='black', linewidth=2, alpha=alpha)
 
     if args.machs :
         pass
