@@ -147,8 +147,7 @@ if __name__ == "__main__":
         else :
             filename_out = f"{folders[0]}_imf{target_sfe}.h5"
 
-        h5f = h5py.File(filename_out,'w')
-
         # store the mass
+        h5f = h5py.File(filename_out,'w')
         h5f.create_dataset("mass", data=part_masses)
         print(f"saved the particle mass data to: {filename_out}")
