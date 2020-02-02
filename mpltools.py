@@ -52,7 +52,7 @@ def mpl_init() :
 PLOTTER FUNCTIONS
 ================================================================================
 """
-def plot_1D(x, y,
+def plot_1D(plot_func, x, y,
     ax=plt.gca(), overplot=False, xrange=(None, None), yrange=(None, None),
     xlabel=None, ylabel=None, title=None, annotation=None, log=False,
     fit=None, fit_range=None, **plot_kwargs) :
@@ -61,13 +61,15 @@ def plot_1D(x, y,
         Plots a single line plot atop the specified axis
 
     INPUTS
+        plot_func (function)
+            instance method of Axes or pyplot, such as plt.plot or ax.hist
         x (array_like[N])
             the x-coordinates
         y (array_like[N])
             the y-coordinates
 
         ax (matplotlib.axes)
-            the axis the projection will be plotted on
+            the axis the data will be plotted on
         overplot (boolean)
             set this to True not to reinitialise the axes ranges and ticks
         xrange, yrange (array_like[2])
@@ -90,7 +92,7 @@ def plot_1D(x, y,
     from scipy.optimize import curve_fit
 
     # plot the data
-    ax.plot(x, y, **plot_kwargs)
+    plot_func(x, y, **plot_kwargs)
 
     if not overplot :
         # set the log scale
@@ -155,108 +157,6 @@ def plot_1D(x, y,
     plt.tight_layout()
 # enddef plot_1D
 
-def plot_scatter(x, y,
-    ax=plt.gca(), overplot=False, xrange=(None, None), yrange=(None, None),
-    xlabel=None, ylabel=None, title=None, annotation=None, log=False,
-    fit=None, fit_range=None, **plot_kwargs) :
-    """
-    DESCRIPTION
-        Plots a single scatter atop the specified axis
-
-    INPUTS
-        x (array_like[N])
-            the x-coordinates
-        y (array_like[N])
-            the y-coordinates
-
-        ax (matplotlib.axes)
-            the axis the projection will be plotted on
-        overplot (boolean)
-            set this to True not to reinitialise the axes ranges and ticks
-        xrange, yrange (array_like[2])
-            [min, max] of the axes
-        xlabel, ylabel (str)
-            axes labels (to be passed on to ax.set_xlabel and ax.set_ylabel)
-        title (str)
-            plot title
-        annotation (str)
-            extra text to be displayed as anchored text
-        fit (str)
-            adds a linear ("linear") or log-log ("loglog") fit
-        fit_range (array_like[2])
-            the range of x and y to be fitted for
-
-        plot_kwargs (keyword arguments)
-            keyward arguments to be passed to matplotlib.axes.plot
-    """
-    from matplotlib.offsetbox import AnchoredText
-    from scipy.optimize import curve_fit
-
-    # plot the data
-    ax.scatter(x, y, **plot_kwargs)
-
-    if not overplot :
-        # set the log scale :
-        if log is True :
-            ax.set_xscale("log")
-            ax.set_yscale("log")
-        elif log is False :
-            pass
-        else :
-            if log[0] is True :
-                ax.set_xscale("log")
-            if log[1] is True :
-                ax.set_yscale("log")
-
-        # set the axes ranges
-        ax.set_xlim(left=xrange[0], right=xrange[1])
-        ax.set_ylim(bottom=yrange[0], top=yrange[1])
-
-        # set the axes labels
-        if xlabel is not None :
-            ax.set_xlabel(xlabel)
-        if ylabel is not None :
-            ax.set_ylabel(ylabel)
-
-        # set title
-        if title is not None :
-            ax.set_title(title)
-
-        # annotation
-        if annotation is not None :
-            at = AnchoredText(annotation, loc='upper left', frameon=True)
-            at.patch.set_boxstyle("round,pad=0.,rounding_size=0.2")
-            ax.add_artist(at)
-    # endif not overplot
-
-    # fitting
-    if fit == "linear" :
-        pass
-    elif fit == "loglog" :
-        # perform a linear fit in log-log space
-        def logf(logx, a, b) :
-            return a + logx*b
-
-        # crop the x and y according to the fitting range
-        if fit_range is not None :
-            x_fit = x[fit_range[0]:fit_range[1]]
-            y_fit = y[fit_range[0]:fit_range[1]]
-        else :
-            x_fit = x
-            y_fit = y
-
-        # perform the fitting
-        print("begin fitting...")
-        popt, pcov = curve_fit(logf, np.log10(x_fit), np.log10(y_fit), p0=(1,0))
-
-        # overplot the fitted curve
-        ax.plot(x, np.power(10, logf(np.log10(x), *popt)),
-                color=plot_kwargs['color'], linewidth=plot_kwargs['linewidth']*2, alpha=0.3,
-                label=rf"$k^{{ {popt[1]:5.3f}\pm {np.sqrt(np.diag(pcov))[1]:5.3f} }}$")
-    # endif fit
-    plt.tight_layout()
-# enddef plot_scatter
-
 def plot_hist(data,
     ax=plt.gca(), overplot=False, xrange=(None, None), yrange=(None, None),
     xlabel=None, ylabel=None, title=None, annotation=None, log=False,
@@ -270,7 +170,7 @@ def plot_hist(data,
             the data
 
         ax (matplotlib.axes)
-            the axis the projection will be plotted on
+            the axis the data will be plotted on
         overplot (boolean)
             set this to True not to reinitialise the axes ranges and ticks
         xrange, yrange (array_like[2])
