@@ -146,7 +146,12 @@ def plot_1D(plot_func, x, y,
 
         # perform the fitting
         print("begin fitting...")
-        popt, pcov = curve_fit(logf, np.log10(x_fit), np.log10(y_fit), p0=(1,0))
+        if 'yerr' in plot_kwargs :
+            sigma=plot_kwargs['yerr'][fit_range[0]:fit_range[1]]
+        else :
+            sigma=None
+        popt, pcov = curve_fit(logf, np.log10(x_fit), np.log10(y_fit),
+                p0=(1,0), sigma=sigma)
 
         # overplot the fitted curve
         ax.plot(x, np.power(10, logf(np.log10(x), *popt)),
