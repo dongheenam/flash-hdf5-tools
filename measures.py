@@ -28,27 +28,27 @@ class CST(object) :
         if 'L' in params_custom :
             self.L = params_custom['L']
             if verbose :
-                print(f"L updated to be: {self.L}")
+                print(f"L updated to be: {self.L:.3E}")
         if 'MACH' in params_custom :
             self.MACH = params_custom['MACH']
             if verbose :
-                print(f"MACH updated to be: {self.MACH}")
+                print(f"MACH updated to be: {self.MACH:.3f}")
 
         if 'RHO' in params_custom :
             self.RHO = params_custom['RHO']
             if verbose :
-                print(f"RHO updated to be: {self.RHO}")
+                print(f"RHO updated to be: {self.RHO:.3E}")
             self.M_TOT = self.RHO * self.L**3
         elif 'M_TOT' in params_custom :
             self.M_TOT = params_custom['M_TOT']
             if verbose :
-                print(f"M_TOT updated to be: {self.M_TOT}")
+                print(f"M_TOT updated to be: {self.M_TOT:.3E}")
             self.RHO = self.M_TOT / self.L**3
 
         if 'M_PARTTOT' in params_custom :
             self.SFE = params_custom['M_PARTTOT'] / self.M_TOT
             if verbose :
-                print(f"SFE updated to be: {self.SFE}")
+                print(f"SFE updated to be: {self.SFE:.4f}")
 
         # store the variables
         self.SIGMA_V = C_S * self.MACH # (3D) velocity dispersion
