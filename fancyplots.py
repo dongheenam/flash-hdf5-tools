@@ -9,6 +9,7 @@ import sys
 import numpy as np
 from scipy.ndimage import gaussian_filter1d
 import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import h5py
 
@@ -28,12 +29,12 @@ N_BINS = 20
 SAL_LOC = (4e0, 3e-1)
 
 PLOT_TITLE = r'$\alpha_\mathrm{vir}=0.25, N=512^3-2048^3$'
-#PLOT_TITLE = r"$E_v\propto k^{-1}," + PLOT_TITLE[1:]
+#PLOT_TITLE = r"$E_v\propto k^{-2}," + PLOT_TITLE[1:]
 PLOT_TITLE = PLOT_TITLE[:-1] + r",\mathrm{SFE}=10\%$"
-PLOT_CDF = False
+FIT_WITH_CDF = False
 
 SHIFT_X = False
-SHIFT_Y = False
+SHIFT_Y = True
 
 """
 ================================================================================
@@ -118,9 +119,12 @@ def proj_mpi(filename, filename_out, save=True, ax=plt.gca(), shift=(False,False
         xrange=xrange, yrange=yrange, xlabel=xlabel, ylabel=ylabel,
         annotation=annotation, log=True, colorbar=True, shift=shift, **kwargs)
 
-    mpltools.plot_scatter(part_xlocs, part_ylocs, ax=ax,
+    mpltools.plot_1D(ax.scatter, part_xlocs, part_ylocs, ax=ax,
         xrange=xrange, yrange=yrange,
-        overplot=True, marker=r'$\odot$', s=80, color='limegreen')
+        overplot=True, marker='.', s=1, color='limegreen')
+    mpltools.plot_1D(ax.scatter, part_xlocs, part_ylocs, ax=ax,
+        xrange=xrange, yrange=yrange,
+        overplot=True, marker='o', s=50, facecolors='none', color='limegreen')
 
     if save :
         fig.savefig(filename_out)
@@ -139,23 +143,23 @@ def imfs(filename_imf, filename_out,
     label += rf" $(N_\mathrm{{sink}}={n_sink})$"
 
     # set up the bins
-    bins = np.zeros(n_sink+2)
-    bins[0] = M_MIN
-    bins[1:-1] = np.sort(masses_in_msol)
-    bins[-1] = M_MAX
+    bins = np.zeros(n_sink+4)
+    bins[0] = M_MIN/10
+    bins[1] = M_MIN
+    bins[2:-2] = np.sort(masses_in_msol)
+    bins[-2] = M_MAX
+    bins[-1] = M_MAX*10
 
     # make the cdf
-    cdf = np.zeros(n_sink+2)
-    cdf[0] = 0.0
-    cdf[1:-1] = np.arange(n_sink) / n_sink
-    cdf[-1] = 1.0
+    cdf = np.zeros(n_sink+4)
+    cdf[0:2] = [0.0]*2
+    cdf[2:-2] = np.arange(n_sink) / n_sink
+    cdf[-2:] = [1.0]*2
 
     # fit the cdf
-    fitting_range = [(0.8<x<10.0) for x in bins]
-    bins_tofit = bins[fitting_range]
-    cdf_tofit = cdf[fitting_range]
-    fit_params = bayestools.fit_cdf(
-        bins_tofit, cdf_tofit, np.zeros(len(bins_tofit)))
+    if FIT_WITH_CDF :
+        fit_params = bayestools.fit_cdf_chab(
+            bins, cdf, np.zeros(len(bins)))
 
     # plot the cdf
     if plot_cdf is True :
@@ -166,8 +170,8 @@ def imfs(filename_imf, filename_out,
             label=label, where='pre', **kwargs)
 
         # fitted slope
-        a, b, ln_f = fit_params[:,0]
-        ax.plot(bins_tofit, 1 - a*bins_tofit**b,
+        cdf_fit = np.array([bayestools.cdf_chab(fit_params[:,0], x_elem) for x_elem in bins])
+        ax.plot(bins, cdf_fit,
             color=kwargs['color'],linestyle='--', linewidth=2)
 
         print("plotting completed!")
@@ -186,22 +190,30 @@ def imfs(filename_imf, filename_out,
 
         log_imf = log_imf / norm_factor
 
+        if not FIT_WITH_CDF :
+            fit_params = bayestools.fit_imf(masses_in_msol)
+
+        # append the index to the label
+        gamma = fit_params[3,0]
+        gamma_err = fit_params[3,1:]
+        label = label[:-1] + rf": \Gamma= {gamma:.2f}^{{+{gamma_err[0]:.2f} }}_{{-{gamma_err[1]:.2f} }} $"
+
         # plot the IMF
         print("plotting imf...")
         mpltools.plot_1D(ax.step, bin_medians, log_imf,
-            ax=ax, log=True, xrange=(M_MIN,M_MAX),
+            ax=ax, log=True, xrange=(M_MIN,M_MAX), yrange=(5e-3, 5e0),
             xlabel=r'$M\,[M_\odot]$', ylabel=r'$\dfrac{dN}{d\log{M}}$',
-            label=label, where='pre', **kwargs)
+            label=label, where='mid', **kwargs)
 
         # fitted slope
-        a, b, ln_f = fit_params[:,0]
-        ax.plot(bins_tofit, -a*b*bins_tofit**b,
+        fitted_IMF = bayestools.gen_imf_chab(fit_params[:,0], bin_medians) * bin_medians
+        ax.plot(bin_medians, fitted_IMF,
             color=kwargs['color'], linestyle='--', linewidth=2)
 
         # salpeter slope
         if save :
             ax.plot(logbins, SAL_LOC[1]*(logbins/SAL_LOC[0])**(-1.35),
-                    color='red', linestyle='--', label="Salpeter")
+                    color='red', linestyle='--', label=r"Salpeter: $\Gamma= -1.35$")
         print("plotting complete!")
 
     # export the plot
