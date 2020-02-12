@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 import h5py
 
 import bayestools
+import dnam_tools
 from constants import M_SOL, PC_flash
 import measures
 import h5tools
@@ -28,13 +29,18 @@ M_MAX = 1e2
 N_BINS = 20
 SAL_LOC = (4e0, 3e-1)
 
-PLOT_TITLE = r'$\alpha_\mathrm{vir}=0.25, N=512^3-2048^3$'
-#PLOT_TITLE = r"$E_v\propto k^{-2}," + PLOT_TITLE[1:]
-PLOT_TITLE = PLOT_TITLE[:-1] + r",\mathrm{SFE}=10\%$"
-FIT_WITH_CDF = False
-
+""" CONSTANTS - projection """
 SHIFT_X = False
 SHIFT_Y = True
+
+""" CONSTANTS - sfr """
+SFE_CUTOFF = 0.1
+
+""" CONSTANTS - general """
+PLOT_TITLE = r'$\alpha_\mathrm{vir}=0.25, N=512^3-2048^3$'
+#PLOT_TITLE = r"$n=1," + PLOT_TITLE[1:]
+#PLOT_TITLE = PLOT_TITLE[:-1] + r",\mathrm{SFE}=10\%$"
+FIT_WITH_CDF = False
 
 """
 ================================================================================
@@ -138,23 +144,25 @@ def imfs(filename_imf, filename_out,
     part_masses = np.array(h5f['mass'])
     masses_in_msol = part_masses / M_SOL
     n_sink = len(masses_in_msol)
+    print(f"particle file {filename_imf} read!")
+    print(f"number of sinks: {n_sink}")
+    print(f"biggest sink   : {np.max(masses_in_msol):.2E} M_sol")
+    print(f"smallest sink  : {np.min(masses_in_msol):.2E} M_sol")
 
     # annotation
     label += rf" $(N_\mathrm{{sink}}={n_sink})$"
 
     # set up the bins
-    bins = np.zeros(n_sink+4)
-    bins[0] = M_MIN/10
-    bins[1] = M_MIN
-    bins[2:-2] = np.sort(masses_in_msol)
-    bins[-2] = M_MAX
-    bins[-1] = M_MAX*10
+    bins = np.zeros(n_sink+2)
+    bins[0] = M_MIN
+    bins[1:-1] = np.sort(masses_in_msol)
+    bins[-1] = M_MAX
 
     # make the cdf
-    cdf = np.zeros(n_sink+4)
-    cdf[0:2] = [0.0]*2
-    cdf[2:-2] = np.arange(n_sink) / n_sink
-    cdf[-2:] = [1.0]*2
+    cdf = np.zeros(n_sink+2)
+    cdf[0] = 0.0
+    cdf[1:-1] = np.arange(n_sink) / n_sink
+    cdf[-1] = 1.0
 
     # fit the cdf
     if FIT_WITH_CDF :
@@ -236,60 +244,75 @@ def sfrs(folders_regexp, filename_out, save=True, ax=plt.gca(), **kwargs) :
     if len(folders) == 0 :
         sys.exit("no folders matching the expression! exitting...")
 
-    overplot = True
-    SFRs_at_the_SFE = np.array([],dtype='f8')
+    overplot = False
     for folder in folders :
+        # read the .dat file
         try :
-            dat = h5tools.DatFile(os.path.join(folder, 'Turb.dat'))
+            dat = h5tools.DatFile(os.path.join(folder, "Turb.dat"))
+            print(f"Read Turb.dat within {folder}!")
         except OSError :
-            print(f"dat file does not exist in {folder}. skipping...")
+            print(f"Turb.dat file does not exist in {folder}. skipping...")
             continue
 
+        # reach out to the last plotfile in the folder for the constants
         filenames_plt = os.path.join(folder, 'Turb_hdf5_plt_cnt_????')
-        try :
-            cst = measures.CST.fromfile(glob.glob(filenames_plt)[0], verbose=False)
-        except IndexError :
+        filename_plt = dnam_tools.get_file(filenames_plt, loc='last')
+        if filename_plt is not None :
+            cst = measures.CST.fromfile(filename_plt, verbose=False)
+            print(f"using {filename_plt} for the constants...")
+        else :
             print(f"plotfile does not exist in {folder}. skipping...")
             continue
 
-        # calculate the star formation efficiency and rate
+        # calculate the star formation efficiency and pull time data
         SFEs = (cst.M_TOT - dat.data['mass'])/cst.M_TOT
-        time_in_Tff = dat.data['time']/cst.T_FF
+        time_sec = dat.data['time']
+
+        # cut off SFE
+        data_below_cutoff = SFEs<SFE_CUTOFF
+        SFEs = SFEs[data_below_cutoff]
+        time_sec = time_sec[data_below_cutoff]
+
+        # shift the SFE data if necessary
+        if False :
+            time_sec -= time_sec[0]
+        else :
+            sink_exists = SFEs>1e-10
+            SFEs = SFEs[sink_exists]
+            time_sec = time_sec[sink_exists]
+            time_sec -= time_sec[0]
+
+        # calculate time in terms of crossing time and free-fall time
+        time_in_T = time_sec/cst.T_TURB
+        time_in_Tff = time_sec/cst.T_FF
+
+        # calculate SFE per free-fall time
         SFR_in_Tff = np.diff(SFEs) / np.diff(time_in_Tff)
 
-        # record the SFR at the specified SFE
-        i_SFR = np.searchsorted(SFEs, BUILD_IMF_AT_SFE, sorter=None)
-        if SFEs[-1] > BUILD_IMF_AT_SFE  :
-            SFRs_at_the_SFE = np.append(SFRs_at_the_SFE, SFR_in_Tff[i_SFR])
-
-        # smooth the function
-        SFR_in_Tff = gaussian_filter1d(SFR_in_Tff, 20)
-        #SFR_in_Tff = median_filter(SFR_in_Tff, size=100)
-        #SFR_in_Tff = savgol_filter(SFR_in_Tff, 11, 2)
+        # average the SFR
+        smooth_len = 50
+        x, y = np.zeros((2, len(SFR_in_Tff)//smooth_len))
+        for i in range(len(x)) :
+            x[i] = np.average(time_in_Tff[smooth_len*i:smooth_len*(i+1)])
+            y[i] = np.average(SFR_in_Tff[smooth_len*i:smooth_len*(i+1)])
 
         # plot SFR vs SFE
-        mpltools.plot_1D(ax.plot, SFEs[1:]*100.0, SFR_in_Tff,
-            overplot=overplot, xrange=(0.0, 20.0), yrange=(0.0, 1.00),
-            xlabel='SFE [%]', ylabel='SFR_ff', alpha=0.2, linewidth=2)
+        #mpltools.plot_1D(ax.plot, SFEs[1:]*100.0, SFR_in_Tff,
+        #    overplot=overplot, xrange=(0.0, 20.0), yrange=(0.0, 1.00),
+        #    xlabel='SFE [%]', ylabel='SFR_ff', alpha=0.2, linewidth=2)
         # plot SFR vs t_FF
-        #mpltools.plot_1D(time_in_Tff[1:], SFR_in_Tff,
-        #    ax=ax, overplot=overplot, xrange=(None, None), yrange=(0.0, 1.00),
-        #    xlabel='t [T_ff]', ylabel='SFR_ff', title=PLOT_TITLE, alpha=0.2, linewidth=2)
+        mpltools.plot_1D(ax.plot, x, y,
+            ax=ax, overplot=overplot,
+            xlabel=r'$t\,[T_\mathrm{ff}]$', ylabel=r'$\mathrm{SFR}_\mathrm{ff}$', **kwargs)
 
-        if overplot is True :
-            overplot = False
+        if overplot is False :
+            overplot = True
+            kwargs['label'] = None
 
     if save :
+        plt.legend(loc='upper right', prop={'size': 16})
         plt.savefig(filename_out)
         print("plot printed to: "+filename_out)
-
-    # the distribution of SFR
-    fig = plt.figure()
-    ax = fig.add_subplot()
-    mpltools.plot_hist(SFRs_at_the_SFE, ax=ax, xlabel='SFR_ff', ylabel='N_sim',
-                       color='black', annotation=IMF_TEXT, title=PLOT_TITLE)
-    if save :
-        plt.savefig("SFRs.pdf")
 #enddef sfrs
 
 """
@@ -359,8 +382,8 @@ if __name__ == "__main__" :
             filename_out = filename + '_imf.png'
 
         # plot the imf
-        label_1 = r"$E_v \propto k^{-1}$"
-        label_2 = r"$E_v \propto k^{-2}$"
+        label_1 = r"$n=1$"
+        label_2 = r"$n=2$"
         if args.cdfs :
             alpha = 0.5
         else :
@@ -382,6 +405,11 @@ if __name__ == "__main__" :
         else :
             filename_out = filename + '_sfr.png'
 
+        label_1 = r"$n=1$"
+        label_2 = r"$n=2$"
         # plot the sfrs
-        sfrs(filename, filename_out,
-             ax=ax, title=PLOT_TITLE)
+        sfrs("AMR_beta1_*_sink", filename_out, label=label_1,
+             ax=ax, color='blue', linewidth=2, alpha=0.5, save=False)
+        sfrs("AMR_beta2_*_sink", filename_out, label=label_2,
+             ax=ax, color='black', linewidth=2, alpha=0.5, xrange=(0,2.5),
+             title=PLOT_TITLE)
