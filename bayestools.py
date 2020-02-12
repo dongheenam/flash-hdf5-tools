@@ -23,10 +23,10 @@ N_CHAIN = 1000
 """ THE CHABRIER IMF """
 # the lognormal part
 def imf_ln(theta, x_elem) :
-    sigma, mu, m_t, gamma = theta
+    sigma, mu, m_t, gamma= theta
     return 1/(x_elem*sigma*np.sqrt(2*np.pi))*np.exp(-0.5*( (np.log10(x_elem)-np.log10(mu))/sigma )**2)
 
-# the powerlaw imf
+# the powerlaw part
 def imf_pl(theta, x_elem) :
     sigma, mu, m_t, gamma = theta
     return x_elem**(gamma-1)
@@ -40,7 +40,7 @@ def imf_chab(theta, x_elem, pl_factor=1.0, A=1.0) :
     else :
         return A*pl_factor*imf_pl(theta, x_elem)
 
-# generates normalised IMF
+# normalise the IMF and evaluate at every x
 def gen_imf_chab(theta, x) :
     sigma, mu, m_t, gamma = theta
 
@@ -69,7 +69,7 @@ def fit_imf(masses_obs) :
     def ln_prior(theta) :
         sigma, mu, m_t, gamma = theta
 
-        in_range = (sigma>0 and M_MIN<mu<m_t and M_MIN<m_t<M_MAX and -3<gamma<0)
+        in_range = (sigma>0 and M_MIN<mu<m_t and M_MIN<m_t<2.0 and -3<gamma<0)
         if in_range :
             # prior goes here
             #return (1+b**2)**(-1.5)
@@ -80,8 +80,8 @@ def fit_imf(masses_obs) :
 
     # define the likelihood
     def ln_likelihood(theta, x) :
-        model = np.log(gen_imf_chab(theta, x))
-
+        imfs = gen_imf_chab(theta, x)
+        model = np.log( imfs[imfs!=0] )
         return np.sum(model)
 
     # the probability
@@ -96,7 +96,7 @@ def fit_imf(masses_obs) :
     print("initialising emcee...")
     # initial guesslog_f
     # sigma, mu, m_t, gamma = theta
-    theta_0 = [0.3, 0.2, 0.5, -1.35] + 1e-4*np.random.random(size=(N_WALKERS,4))
+    theta_0 = [0.3, 0.2, 0.5, -1.35] + 1e-3*np.random.random(size=(N_WALKERS,4))
 
     with multiprocessing.Pool() as pool :
         # initiate the sampler
