@@ -269,9 +269,9 @@ def sfrs(folders_regexp, filename_out, save=True, ax=plt.gca(), **kwargs) :
         time_sec = dat.data['time']
 
         # cut off SFE
-        data_below_cutoff = SFEs<SFE_CUTOFF
-        SFEs = SFEs[data_below_cutoff]
-        time_sec = time_sec[data_below_cutoff]
+        #data_below_cutoff = SFEs<SFE_CUTOFF
+        #SFEs = SFEs[data_below_cutoff]
+        #time_sec = time_sec[data_below_cutoff]
 
         # shift the SFE data if necessary
         if False :
@@ -286,28 +286,29 @@ def sfrs(folders_regexp, filename_out, save=True, ax=plt.gca(), **kwargs) :
         time_in_T = time_sec/cst.T_TURB
         time_in_Tff = time_sec/cst.T_FF
 
-        # calculate SFE per free-fall time
-        SFR_in_Tff = np.diff(SFEs) / np.diff(time_in_Tff)
-
         # average the SFR
-        smooth_len = 50
-        x, y = np.zeros((2, len(SFR_in_Tff)//smooth_len))
-        for i in range(len(x)) :
-            x[i] = np.average(time_in_Tff[smooth_len*i:smooth_len*(i+1)])
-            y[i] = np.average(SFR_in_Tff[smooth_len*i:smooth_len*(i+1)])
+        smooth_len = 100
+        x = time_in_Tff[smooth_len//2:-smooth_len//2:smooth_len]
+        y = np.diff(SFEs[::smooth_len])/np.diff(time_in_Tff[::smooth_len])
 
-        # plot SFR vs SFE
-        #mpltools.plot_1D(ax.plot, SFEs[1:]*100.0, SFR_in_Tff,
-        #    overplot=overplot, xrange=(0.0, 20.0), yrange=(0.0, 1.00),
-        #    xlabel='SFE [%]', ylabel='SFR_ff', alpha=0.2, linewidth=2)
+        # add seed to label
+        seed = str(folder)[-11:-5]
+        label_old = kwargs['label']
+        kwargs['label'] = kwargs['label'][:-1] + rf", \mathrm{{seed}}={seed}$"
+
+        # plot SFE vs t_FF
+        mpltools.plot_1D(ax.plot, time_in_Tff, SFEs*100.0,
+            ax=ax, overplot=overplot, yrange=(0.0,15.0),
+            xlabel=r'$t\,[T_\mathrm{ff}]$', ylabel=r'$\mathrm{SFE}\,[\%]$',  **kwargs)
         # plot SFR vs t_FF
-        mpltools.plot_1D(ax.plot, x, y,
-            ax=ax, overplot=overplot,
-            xlabel=r'$t\,[T_\mathrm{ff}]$', ylabel=r'$\mathrm{SFR}_\mathrm{ff}$', **kwargs)
+        #mpltools.plot_1D(ax.plot, x, y,
+        #    ax=ax, overplot=overplot,
+        #    xlabel=r'$t\,[T_\mathrm{ff}]$', ylabel=r'$\mathrm{SFR}_\mathrm{ff}$', **kwargs)
 
         if overplot is False :
             overplot = True
-            kwargs['label'] = None
+            
+        kwargs['label'] = label_old
 
     if save :
         plt.legend(loc='upper right', prop={'size': 16})
@@ -409,7 +410,7 @@ if __name__ == "__main__" :
         label_2 = r"$n=2$"
         # plot the sfrs
         sfrs("AMR_beta1_*_sink", filename_out, label=label_1,
-             ax=ax, color='blue', linewidth=2, alpha=0.5, save=False)
+             ax=ax, linestyle='-', linewidth=2, alpha=0.5, save=False)
         sfrs("AMR_beta2_*_sink", filename_out, label=label_2,
-             ax=ax, color='black', linewidth=2, alpha=0.5, xrange=(0,2.5),
+             ax=ax, linestyle='--', linewidth=2, alpha=0.5,
              title=PLOT_TITLE)
