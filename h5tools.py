@@ -120,7 +120,7 @@ def save_to_hdf5(filename_out, *datas_and_names):
     INPUTS
     filename_out
         the name of the hdf5 file that will be created
-    datas_and_names (array_like[:])
+    datas_and_names (array_like[:,2])
         tuples of the data and its name
             e.g. [(data1, name1), (data2, name2), ... ]
     """
