@@ -12,37 +12,38 @@ from scipy.special import erf
 """
 CONSTANTS
 """
-M_MIN = 0.001
+M_MIN = 1e-5
 M_MAX = 20.0
 
 # MCMC parameters
-N_WALKERS = 96
+N_WALKERS = 48
 N_BURNIN = 100
-N_CHAIN = 1000
+N_CHAIN = 500
 
 """ THE CHABRIER IMF """
 # the lognormal part
 def imf_ln(theta, x_elem) :
-    sigma, mu, m_t, gamma= theta
+    sigma, mu, m_t, gamma, m_max = theta
     return 1/(x_elem*sigma*np.sqrt(2*np.pi))*np.exp(-0.5*( (np.log10(x_elem)-np.log10(mu))/sigma )**2)
 
 # the powerlaw part
 def imf_pl(theta, x_elem) :
-    sigma, mu, m_t, gamma = theta
+    sigma, mu, m_t, gamma, m_max = theta
     return x_elem**(gamma-1)
 
 # the full Chabrier IMF
 def imf_chab(theta, x_elem, pl_factor=1.0, A=1.0) :
-    sigma, mu, m_t, gamma = theta
-
+    sigma, mu, m_t, gamma, m_max = theta
     if x_elem < m_t :
         return A*imf_ln(theta, x_elem)
-    else :
+    elif x_elem < m_max :
         return A*pl_factor*imf_pl(theta, x_elem)
+    else :
+        return 0
 
 # normalise the IMF and evaluate at every x
 def gen_imf_chab(theta, x) :
-    sigma, mu, m_t, gamma = theta
+    sigma, mu, m_t, gamma, m_max = theta
 
     # first find the coefficient to make the imf continuous
     cont = root_scalar(lambda x: imf_ln(theta, m_t) - x*imf_pl(theta, m_t), x0=1.0, x1=0.9)
@@ -50,7 +51,7 @@ def gen_imf_chab(theta, x) :
 
     # then normalise the imf
     norm_factor1, _ = quad(lambda x: imf_ln(theta, x), M_MIN, m_t)
-    norm_factor2, _ = quad(lambda x: pl_factor*imf_pl(theta, x), m_t, M_MAX)
+    norm_factor2, _ = quad(lambda x: pl_factor*imf_pl(theta, x), m_t, m_max)
     A = 1/(norm_factor1 + norm_factor2)
 
     # return IMF(x)
@@ -67,13 +68,13 @@ def fit_imf(masses_obs) :
     """ model and probility distributions """
     # define the prior
     def ln_prior(theta) :
-        sigma, mu, m_t, gamma = theta
+        sigma, mu, m_t, gamma, m_max = theta
 
-        in_range = (sigma>0 and M_MIN<mu<m_t and M_MIN<m_t<2.0 and -3<gamma<0)
+        in_range = (sigma>0 and M_MIN<mu<m_t and M_MIN<m_t<m_max and -3<gamma<0)
         if in_range :
             # prior goes here
             #return (1+b**2)**(-1.5)
-            return 0
+            return np.log(1/m_max)
         else :
             # out of range
             return -np.inf
@@ -81,8 +82,11 @@ def fit_imf(masses_obs) :
     # define the likelihood
     def ln_likelihood(theta, x) :
         imfs = gen_imf_chab(theta, x)
-        model = np.log( imfs[imfs!=0] )
-        return np.sum(model)
+        if len(imfs[imfs==0]) == 0 :
+            ll = np.sum(np.log(imfs))
+            return ll
+        else :
+            return -np.inf
 
     # the probability
     def ln_probability(theta, x) :
@@ -94,13 +98,15 @@ def fit_imf(masses_obs) :
 
     """ initialisation """
     print("initialising emcee...")
-    # initial guesslog_f
-    # sigma, mu, m_t, gamma = theta
-    theta_0 = [0.3, 0.2, 0.5, -1.35] + 1e-3*np.random.random(size=(N_WALKERS,4))
+    # initial guess
+    theta_names = ['sigma', 'mu', 'm_t', 'gamma', 'm_max']
+    theta_guess = [0.3, 0.2, 0.5, -1.35, 30.0]
+    n_theta = len(theta_names)
+    theta_0 = theta_guess + 1e-1*np.random.random(size=(N_WALKERS,n_theta))
 
     with multiprocessing.Pool() as pool :
         # initiate the sampler
-        sampler = emcee.EnsembleSampler(N_WALKERS, 4, ln_probability, args=[masses_obs])
+        sampler = emcee.EnsembleSampler(N_WALKERS, n_theta, ln_probability, args=[masses_obs])
 
         # burnin runs
         print("running burnins...")
@@ -119,13 +125,12 @@ def fit_imf(masses_obs) :
 
     # print out the result
     print("fininshed!")
-    names = ['sigma', 'mu', 'm_t', 'gamma']
-    results = np.zeros((len(names),3))
-    for i in range(len(names)):
+    results = np.zeros((n_theta,3))
+    for i in range(n_theta):
         quarts = np.percentile(pos_final[:, i], [16, 50, 84])
         ranges = np.diff(quarts)
         results[i] = (quarts[1], ranges[1], ranges[0])
-        print(f"{names[i]:10s}: {results[i,0]:.3E} (+{results[i,1]:.3E} -{results[i,2]:.3E})")
+        print(f"{theta_names[i]:10s}: {results[i,0]:.3E} (+{results[i,1]:.3E} -{results[i,2]:.3E})")
 
     return results
 
