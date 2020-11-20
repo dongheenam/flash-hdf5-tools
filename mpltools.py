@@ -24,7 +24,7 @@ def mpl_init() :
     matplotlib.rcParams['text.usetex'] = True
     matplotlib.rcParams['text.latex.preamble'] = [r'\usepackage{amsmath}']
     matplotlib.rcParams['font.family'] = "DejaVu Sans"
-    matplotlib.rcParams['font.size'] = 18
+    matplotlib.rcParams['font.size'] = 22
 
     # ticks and lines
     matplotlib.rcParams['xtick.major.size'] = 12
@@ -44,6 +44,7 @@ def mpl_init() :
     matplotlib.rcParams['legend.numpoints']     = 1
     matplotlib.rcParams['legend.frameon']       = False
     matplotlib.rcParams['legend.handletextpad'] = 0.3
+    matplotlib.rcParams['legend.fontsize']      = 22
 # enddef mpl_init
 
 
@@ -92,7 +93,7 @@ def plot_1D(plot_func, x, y,
     from scipy.optimize import curve_fit
 
     # plot the data
-    plot_func(x, y, **plot_kwargs)
+    line = plot_func(x, y, **plot_kwargs)
 
     if not overplot :
         # set the log scale
@@ -147,19 +148,31 @@ def plot_1D(plot_func, x, y,
         # perform the fitting
         print("begin fitting...")
         if 'yerr' in plot_kwargs :
-            sigma=plot_kwargs['yerr'][fit_range[0]:fit_range[1]]
+            if plot_kwargs['yerr'] is not None :
+                sigma=plot_kwargs['yerr'][fit_range[0]:fit_range[1]]
+            else :
+                sigma=None
         else :
             sigma=None
         popt, pcov = curve_fit(logf, np.log10(x_fit), np.log10(y_fit),
-                p0=(1,0), sigma=sigma)
+                p0=(1,0), sigma=None)
+        errors = np.sqrt(np.diag(pcov))
+        label = rf"$k^{{ {popt[1]:5.3f}\pm {errors[1]:5.3f} }}$"
+        print(rf"parameters: {popt}")
+        print(rf"fitted curve: {label}")
 
         # overplot the fitted curve
+        try :
+            color = plot_kwargs['color']
+        except KeyError :
+            color = line[0].get_color()
         ax.plot(x, np.power(10, logf(np.log10(x), *popt)),
-                color=plot_kwargs['color'], linewidth=plot_kwargs['linewidth']*2, alpha=0.3,
-                label=rf"$k^{{ {popt[1]:5.3f}\pm {np.sqrt(np.diag(pcov))[1]:5.3f} }}$")
+            color=color, linewidth=plot_kwargs['linewidth']*2, alpha=0.3,
+            label=label)
 
     # endif fit
     plt.tight_layout()
+    return line
 # enddef plot_1D
 
 def plot_hist(data,
@@ -234,7 +247,7 @@ def plot_hist(data,
 # enddef plot_hist
 
 def plot_proj(proj, ax=plt.gca(), overplot=False,
-              xrange=None, yrange=None, xlabel=None, ylabel=None,
+              xrange=(None,None), yrange=(None,None), xlabel=None, ylabel=None,
               title=None, colorbar=False, colorbar_title=None, annotation=None,
               log=False, shift=False, color_range=[None,None], **imshow_kwargs):
     """
@@ -312,8 +325,10 @@ def plot_proj(proj, ax=plt.gca(), overplot=False,
 
     if not overplot :
         # set the axes ranges
-        ax.set_xlim(left=xrange[0], right=xrange[1])
-        ax.set_ylim(bottom=yrange[0], top=yrange[1])
+        if xrange is not None :
+            ax.set_xlim(left=xrange[0], right=xrange[1])
+        if yrange is not None :
+            ax.set_ylim(bottom=yrange[0], top=yrange[1])
 
         # set the axes labels
         if xlabel is not None :

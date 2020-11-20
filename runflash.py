@@ -19,10 +19,14 @@ import h5tools
 PATH_FORCING_GEN = "/home/100/dn8909/source/forcing_generator/"
 
 ST_POWER_LAW_EXP = "0.2"
+#ST_POWER_LAW_EXP = -2.0
 VELOCITY = "1.0e5"
 ST_ENERGY = "1.03e-2 * velocity**3/L" # for beta=1 (0.82e-2 for UG)
+#ST_ENERGY = "2.01e-2 * velocity**3/L" # for beta=1, mach_a=1
+#ST_ENERGY = "0.61e-2 * velocity**3/L" # for parabola 
 #ST_ENERGY = "1.7e-2 * velocity**3/L" # for beta=2
 ST_STIRMAX = "(256+eps) * twopi/L"
+#ST_STIRMAX = "(3+eps) * twopi/L"
 
 """ PARAMETERS - FLASH """
 PATH_FLASH = "/home/100/dn8909/source/flash4.0.1-rsaa_fork/"
@@ -33,19 +37,19 @@ CHKFILE_PREFIX = "Turb_hdf5_chk"
 PLOTFILE_PREFIX = "Turb_hdf5_plt_cnt"
 PARTFILE_PREFIX = "Turb_hdf5_part"
 
-RHO_0 = 6.557E-21
-RES_DENS_FACTOR = 2.0
-LREFINE_MAX = 3
+RHO_0 = 1.31E-20
+RES_DENS_FACTOR = 1.0
+LREFINE_MAX = 1
 
 KEEP_FILES_AT_SFE = np.linspace(0.01,0.20,20)
 
 """ PARAMETERS - QSUB """
-PROJECT = "ek9"
+PROJECT = "jh2"
 QUEUE = "normal"
-WALLTIME = "24:00:00"
+WALLTIME = "48:00:00"
 NCPUS = 528
 MEM = f"{NCPUS * 4}GB"
-NAME_JOB = "b1A"
+NAME_JOB = "mag"
 
 """
 ================================================================================
@@ -122,10 +126,14 @@ def generate_forcingfile(seed=140281):
 
     # the last line of the stdout contains the name of the forcing file
     last_stdout = cp.stdout.split("\n")[-2]
-
     forcingfile_name = last_stdout[last_stdout.find('"') + 1:last_stdout.rfind('"')]
-    print(f"forcing file created: {forcingfile_name}!")
-    return forcingfile_name
+
+    # cut off zeta info and replace with ST_ENERGY
+    forcingfile_name_new = f"{forcingfile_name[:13]}e{ST_ENERGY[:4]}{forcingfile_name[30:]}"
+    shutil.move(forcingfile_name, forcingfile_name_new)
+
+    print(f"forcing file created: {forcingfile_name_new}!")
+    return forcingfile_name_new
 
 
 def submit_job(project=PROJECT, queue=QUEUE, walltime=WALLTIME, ncpus=NCPUS, mem=MEM, dir="",
@@ -396,9 +404,6 @@ def restart_gravamr(original_dir, seed=140281, fork=True, depend=None) :
                  plotFileIntervalTime="1.543e11",
                  particleFileIntervalTime="1.543e11",
                  tmax="3.086e14",
-                 res_rescale_dens=".true.",
-                 res_dens_factor=RES_DENS_FACTOR,
-                 rho_ambient=RHO_0*RES_DENS_FACTOR,
                  lrefine_max=LREFINE_MAX
                  )
 
@@ -420,7 +425,7 @@ def restart(original_dir, n_jobs, depend=None, flash_name=FLASH_EXE) :
     replace_file(f"{original_dir}/flash.par",
                  res_rescale_dens='.false.'
                  )
-    
+
     print(f"initialising {n_jobs} restarts at {original_dir}...")
     # check if job.sh exists already
     jobshs = os.path.join(original_dir, "job[0-9]*.sh")
@@ -452,19 +457,30 @@ def restart(original_dir, n_jobs, depend=None, flash_name=FLASH_EXE) :
 def clean_hdf5(original_dir, seed=140281, keep_files_at_sfe=KEEP_FILES_AT_SFE,
                delete_plotfiles=True, delete_partfiles=True, delete_chkfiles=True) :
     print(f"inspecting {original_dir}_{seed:06d}_sink for cleanning...")
-    # first find all the plot and particle files
+    # first find the plotfiles, particle files and checkfiles
     filenames_plt = glob.glob(
         os.path.join(f"{original_dir}_{seed:06d}_sink", f"{PLOTFILE_PREFIX}_????"))
     filenames_part = glob.glob(
         os.path.join(f"{original_dir}_{seed:06d}_sink", f"{PARTFILE_PREFIX}_????"))
+    filenames_chk = glob.glob(
+        os.path.join(f"{original_dir}_{seed:06d}_sink", f"{CHKFILE_PREFIX}_????"))
     filenames_plt.sort()
     filenames_part.sort()
+    filenames_chk.sort()
     n_files = len(filenames_part)
-    print(f"found {n_files} files!")
-    if n_files == 0 :
+    n_chks = len(filenames_chk)
+    print(f"found {n_files} files and {n_chks} checkfiles!")
+    if (n_files == 0) or (n_chks < 2) :
+        print("no files or checkfiles, skipping...")
         return 0.0
 
-    # loop over the file
+    # loop over the checkfiles - only keep the first and the last checkfiles
+    for i in range(1, n_chks-1) :
+        chkfile_deleted = filenames_chk[i]
+        os.remove(chkfile_deleted)
+        print(f"deleted: {chkfile_deleted}")
+
+    # loop over the plotfile and particle files
     j_SFE = 0
     SFEs_all_found = False
     for i in range(1, n_files-1) :

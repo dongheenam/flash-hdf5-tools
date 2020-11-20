@@ -7,10 +7,11 @@ import os
 import sys
 
 import numpy as np
-from scipy.ndimage import gaussian_filter1d
+from scipy.signal import savgol_filter
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
 import h5py
 
 import bayestools
@@ -24,20 +25,21 @@ import mpltools
 
 
 """ CONSTNATS - IMF """
-M_MIN = 5e-3
-M_MAX = 1e2
+M_MIN = 5e-3/1550
+M_MAX = 1e2/1550
 N_BINS = 20
-SAL_LOC = (4e0, 3e-1)
+SAL_LOC = (1e-3, 1e0)
 
 """ CONSTANTS - projection """
 SHIFT_X = False
-SHIFT_Y = True
+SHIFT_Y = False
 
 """ CONSTANTS - sfr """
 SFE_CUTOFF = 0.1
 
 """ CONSTANTS - general """
-PLOT_TITLE = r'$\alpha_\mathrm{vir}=0.25, N=512^3-2048^3$'
+PLOT_TITLE = ""
+#PLOT_TITLE = r'$\alpha_\mathrm{vir}=0.25, N=512^3-2048^3$'
 #PLOT_TITLE = r"$n=1," + PLOT_TITLE[1:]
 #PLOT_TITLE = PLOT_TITLE[:-1] + r",\mathrm{SFE}=10\%$"
 FIT_WITH_CDF = False
@@ -138,11 +140,11 @@ def proj_mpi(filename, filename_out, save=True, ax=plt.gca(), shift=(False,False
 #enddef proj_mpi
 
 def imfs(filename_imf, filename_out,
-         plot_cdf=False, save=True, ax=plt.gca(), label="", **kwargs) :
+         plot_cdf=False, save=True, ax=plt.gca(), label="", fit_params=None, **kwargs) :
     # read the imf file
     h5f = h5py.File(filename_imf, 'r')
     part_masses = np.array(h5f['mass'])
-    masses_in_msol = part_masses / M_SOL
+    masses_in_msol = part_masses / (1550*M_SOL)
     n_sink = len(masses_in_msol)
     print(f"particle file {filename_imf} read!")
     print(f"number of sinks: {n_sink}")
@@ -199,7 +201,8 @@ def imfs(filename_imf, filename_out,
         log_imf = log_imf / norm_factor
 
         if not FIT_WITH_CDF :
-            fit_params = bayestools.fit_imf(masses_in_msol)
+            if fit_params is None :
+                fit_params = bayestools.fit_imf(masses_in_msol)
 
         # append the index to the label
         gamma = fit_params[3,0]
@@ -209,24 +212,25 @@ def imfs(filename_imf, filename_out,
         # plot the IMF
         print("plotting imf...")
         mpltools.plot_1D(ax.step, bin_medians, log_imf,
-            ax=ax, log=True, xrange=(M_MIN,M_MAX), yrange=(5e-3, 5e0),
-            xlabel=r'$M\,[M_\odot]$', ylabel=r'$\dfrac{dN}{d\log{M}}$',
+            ax=ax, log=True, xrange=(M_MIN,M_MAX), yrange=(5e-3, 2e0),
+            xlabel=r'$m$', ylabel=r'$\dfrac{dN}{d\log{m}}$',
             label=label, where='mid', **kwargs)
 
         # fitted slope
-        fitted_IMF = bayestools.gen_imf_chab(fit_params[:,0], bin_medians) * bin_medians
-        ax.plot(bin_medians, fitted_IMF,
+        fit_x = np.logspace(np.log10(M_MIN),np.log10(M_MAX),N_BINS*10)
+        fit_y = bayestools.gen_imf_chab(fit_params[:,0], fit_x) * fit_x
+        ax.plot(fit_x, fit_y,
             color=kwargs['color'], linestyle='--', linewidth=2)
 
         # salpeter slope
         if save :
             ax.plot(logbins, SAL_LOC[1]*(logbins/SAL_LOC[0])**(-1.35),
-                    color='red', linestyle='--', label=r"Salpeter: $\Gamma= -1.35$")
+                    color='red', linestyle=':', label=r"Salpeter: $\Gamma= -1.35$")
         print("plotting complete!")
 
     # export the plot
     if save :
-        plt.legend(loc='upper left', prop={'size': 16})
+        plt.legend(loc='upper left')
         plt.savefig(filename_out)
         print("IMF printed to: "+filename_out)
 #enddef imfs
@@ -235,7 +239,7 @@ def machs() :
     pass
 #enddef machs
 
-def sfrs(folders_regexp, filename_out, save=True, ax=plt.gca(), **kwargs) :
+def sfrs(folders_regexp, filename_out, save=True, axes=None, labels=None,**kwargs) :
     # find all the folders matching the regular expression
     print(f"received the regexp {folders_regexp}...")
     folders = glob.glob(folders_regexp)
@@ -243,9 +247,15 @@ def sfrs(folders_regexp, filename_out, save=True, ax=plt.gca(), **kwargs) :
     print(f"folders found: {folders}")
     if len(folders) == 0 :
         sys.exit("no folders matching the expression! exitting...")
+    elif axes is None :
+        sys.exit("nowhere to plot!")
+
+    if labels is None :
+        labels = [None]*len(folders)
 
     overplot = False
-    for folder in folders :
+    lines = [None]*len(folders)
+    for folder, label, i in zip(folders, labels, range(len(folders))) :
         # read the .dat file
         try :
             dat = h5tools.DatFile(os.path.join(folder, "Turb.dat"))
@@ -269,14 +279,16 @@ def sfrs(folders_regexp, filename_out, save=True, ax=plt.gca(), **kwargs) :
         time_sec = dat.data['time']
 
         # cut off SFE
-        #data_below_cutoff = SFEs<SFE_CUTOFF
-        #SFEs = SFEs[data_below_cutoff]
-        #time_sec = time_sec[data_below_cutoff]
+        data_below_cutoff = SFEs<SFE_CUTOFF
+        SFEs = SFEs[data_below_cutoff]
+        time_sec = time_sec[data_below_cutoff]
 
         # shift the SFE data if necessary
         if False :
+            # beginning of the (gravity) simulation is t=0
             time_sec -= time_sec[0]
         else :
+            # moment of first sink creation is t=0
             sink_exists = SFEs>1e-10
             SFEs = SFEs[sink_exists]
             time_sec = time_sec[sink_exists]
@@ -286,34 +298,36 @@ def sfrs(folders_regexp, filename_out, save=True, ax=plt.gca(), **kwargs) :
         time_in_T = time_sec/cst.T_TURB
         time_in_Tff = time_sec/cst.T_FF
 
-        # average the SFR
-        smooth_len = 100
+        # average the SFR first
+        smooth_len = 10
         x = time_in_Tff[smooth_len//2:-smooth_len//2:smooth_len]
         y = np.diff(SFEs[::smooth_len])/np.diff(time_in_Tff[::smooth_len])
+        x = np.insert(x, 0, 0.0)
+        y = np.insert(y, 0, 0.0)
 
-        # add seed to label
-        seed = str(folder)[-11:-5]
-        label_old = kwargs['label']
-        kwargs['label'] = kwargs['label'][:-1] + rf", \mathrm{{seed}}={seed}$"
+        # apply further Sav-Gol smoothing
+        y = savgol_filter(y, 101, 2)
+        print(f"SFR_ff = {y[-1]}")
 
         # plot SFE vs t_FF
-        mpltools.plot_1D(ax.plot, time_in_Tff, SFEs*100.0,
-            ax=ax, overplot=overplot, yrange=(0.0,15.0),
-            xlabel=r'$t\,[T_\mathrm{ff}]$', ylabel=r'$\mathrm{SFE}\,[\%]$',  **kwargs)
-        # plot SFR vs t_FF
-        #mpltools.plot_1D(ax.plot, x, y,
-        #    ax=ax, overplot=overplot,
-        #    xlabel=r'$t\,[T_\mathrm{ff}]$', ylabel=r'$\mathrm{SFR}_\mathrm{ff}$', **kwargs)
+        lines[i] = mpltools.plot_1D(axes[0].plot, time_in_Tff, SFEs*100.0,
+            ax=axes[0], overplot=overplot, xrange=(0.0,3.2), yrange=(0.0,10.0),
+            ylabel=r'$\mathrm{SFE}\,[\%]$', label=label, **kwargs)
+        #plot SFR vs t_FF
+        yrange=(0.0,0.55)
+        mpltools.plot_1D(axes[1].plot, x, y,
+            ax=axes[1], overplot=overplot, xrange=(0.0,3.2), log=(False, True), 
+            xlabel=r'$(t-t_\mathrm{sink})/t_\mathrm{ff}$', ylabel=r'$\mathrm{SFR}_\mathrm{ff}$', label=label, **kwargs)
 
         if overplot is False :
             overplot = True
-            
-        kwargs['label'] = label_old
 
     if save :
-        plt.legend(loc='upper right', prop={'size': 16})
+        legend(loc='upper right', prop={'size': 16})
         plt.savefig(filename_out)
         print("plot printed to: "+filename_out)
+
+    return lines
 #enddef sfrs
 
 """
@@ -355,8 +369,6 @@ if __name__ == "__main__" :
     print("initiating the plotting sequence...")
     mpltools.mpl_init()
     #matplotlib.rcParams['text.usetex'] = False
-    fig = plt.figure(figsize=(8,7))
-    ax = fig.add_subplot(111)
 
     if args.proj_mpi :
         # the file name of the plot
@@ -367,11 +379,14 @@ if __name__ == "__main__" :
         else :
             filename_out = filename.split(".")[0] + '.png'
 
+        fig = plt.figure(figsize=(8,7))
+        ax = fig.add_subplot(111)
+
         # plot the projection
         proj_mpi(filename, filename_out,
             ax=ax, title=PLOT_TITLE,
             colorbar_title=r"Column Density $[\mathrm{g}\,\mathrm{cm}^{-2}]$",
-            color_range=(0.02,1.0), shift=(SHIFT_X,SHIFT_Y))
+            color_range=(0.025,10.0), shift=(SHIFT_X,SHIFT_Y))
 
     if args.imfs or args.cdfs :
         # the file name of the plot
@@ -382,17 +397,31 @@ if __name__ == "__main__" :
         else :
             filename_out = filename + '_imf.png'
 
+        fig = plt.figure(figsize=(8,7))
+        ax = fig.add_subplot(111)
+
         # plot the imf
-        label_1 = r"$n=1$"
-        label_2 = r"$n=2$"
+        label_1 = "N1"
+        label_2 = "N2"
+        # limited
+        #fitparams_1 = np.array([(8.520e-1, 4.662e-2, 5.222e-2), (1.343e0, 2.689e-1, 1.985e-1), (1.652e0, 2.294e-1, 2.974e-1), (-7.865e-1, 1.212e-1, 9.548e-2)])
+        #fitparams_2 = np.array([(8.360e-1,3.701e-2,2.667e-2), (1.812e0, 1.048e-1, 2.067e-1), (1.932e0, 4.182e-2, 7.589e-2), (-1.554e0, 1.866e-1, 1.466e-1)])
+        # not limited
+        fitparams_1 = np.array([(8.414e-1, 4.157e-2, 5.811e-2), (1.323e0, 2.475e-1, 3.344e-1), (1.764e0, 6.194e-1, 2.931e-1), (-7.990e-1, 1.383e-1, 1.306e-1)])
+        fitparams_2 = np.array([(8.980e-1, 5.093e-2, 6.407e-2), (2.147e0, 4.636e-1, 5.367e-1), (3.149e0, 3.947e-1, 3.307e-1), (-2.950e0, 3.621e-1, 2.372e-1)])
+
+        # change M_SOL to M_TOT
+        fitparams_1[1:3] /= 1550
+        fitparams_2[1:3] /= 1550
+
         if args.cdfs :
             alpha = 0.5
         else :
             alpha = 1.0
-        imfs("parts_beta1_sfe0.1.h5", filename_out, label=label_1,
+        imfs("parts_beta1_sfe0.1.h5", filename_out, label=label_1, fit_params=fitparams_1,
             ax=ax, plot_cdf=args.cdfs, color='blue', linewidth=2, alpha=alpha, save=False)
-        imfs("parts_beta2_sfe0.1.h5", filename_out, label=label_2,
-            ax=ax, plot_cdf=args.cdfs, title=PLOT_TITLE, color='black', linewidth=2, alpha=alpha)
+        imfs("parts_beta2_sfe0.1.h5", filename_out, label=label_2, fit_params=fitparams_2,
+            ax=ax, plot_cdf=args.cdfs, color='black', linewidth=2, alpha=alpha)
 
     if args.machs :
         pass
@@ -406,11 +435,24 @@ if __name__ == "__main__" :
         else :
             filename_out = filename + '_sfr.png'
 
-        label_1 = r"$n=1$"
-        label_2 = r"$n=2$"
+        fig = plt.figure()
+        gs = fig.add_gridspec(ncols=1, nrows=2, hspace=0)
+        ax1 = fig.add_subplot(gs[0])
+        fig.subplots_adjust(hspace=0.0)
+        ax1.tick_params(labelbottom=False)
+        ax2 = fig.add_subplot(gs[1], sharex=ax1)
+        ax2.set_yticks([0,0.1,0.2,0.3,0.4,0.5])
+
+        labels_1 = ['N1A','N1B','N1C','N1D','N1E','N1F']
+        labels_2 = ['N2A','N2B','N2C','N2D']
         # plot the sfrs
-        sfrs("AMR_beta1_*_sink", filename_out, label=label_1,
-             ax=ax, linestyle='-', linewidth=2, alpha=0.5, save=False)
-        sfrs("AMR_beta2_*_sink", filename_out, label=label_2,
-             ax=ax, linestyle='--', linewidth=2, alpha=0.5,
-             title=PLOT_TITLE)
+        lines_1 = sfrs("AMR_beta1_*_sink", filename_out, labels=labels_1,
+             axes=(ax1,ax2), linestyle='-', linewidth=2, save=False)
+        ax1.set_prop_cycle(None)
+        ax2.set_prop_cycle(None)
+        lines_2 = sfrs("AMR_beta2_*_sink", filename_out, labels=labels_2,
+             axes=(ax1,ax2), linestyle='--', linewidth=2, save=False)
+
+        ax1.legend(handles=[l[0] for l in lines_1], labels=labels_1, loc='upper right', prop={'size':16})
+        ax2.legend(handles=[l[0] for l in lines_2], labels=labels_2, loc='upper right', prop={'size':16})
+        fig.savefig(filename_out)

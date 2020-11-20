@@ -9,6 +9,7 @@ import sys
 import h5py
 import numpy as np
 
+import dnam_tools
 import measures
 import h5tools
 
@@ -27,6 +28,11 @@ if __name__ == "__main__":
                         help='Calculate the 1D power spectrum (of the specified field)')
     parser.add_argument('-part_at_sfe', type=float,
                         help='Collect all particle data at speficied SFE')
+    parser.add_argument('--sfe_raw', action='store_true', default=False,
+                        help='Average the SFE against time since gravity is turned on')
+    parser.add_argument('--sfe_align', action='store_true', default=False,
+                        help='Average the SFE against time since first sink creation')
+
     parser.add_argument('--mean', action='store_true', default=False,
                         help='Read all the .dat files and average all the numbers')
 
@@ -153,6 +159,59 @@ if __name__ == "__main__":
         h5f = h5py.File(filename_out,'w')
         h5f.create_dataset("mass", data=part_masses)
         print(f"saved the particle mass data to: {filename_out}")
+
+    # pull out SFE and SFR_ff data from the files and store them
+    if (args.sfe_raw or args.sfe_align) is True :
+        folders = filenames
+
+        for folder in folders :
+            # read the .dat file
+            try :
+                dat = h5tools.DatFile(os.path.join(folder, "Turb.dat"))
+                print(f"Read Turb.dat within {folder}!")
+            except OSError :
+                print(f"Turb.dat file does not exist in {folder}. skipping...")
+                continue
+
+            # reach out to the last plotfile in the folder for the constants
+            filenames_plt = os.path.join(folder, 'Turb_hdf5_plt_cnt_????')
+            filename_plt = dnam_tools.get_file(filenames_plt, loc='last')
+            if filename_plt is not None :
+                cst = measures.CST.fromfile(filename_plt, verbose=False)
+                print(f"using {filename_plt} for the constants...")
+            else :
+                print(f"plotfile does not exist in {folder}. skipping...")
+                continue
+
+            # calculate the star formation efficiency and pull time data
+            SFEs = (cst.M_TOT - dat.data['mass'])/cst.M_TOT
+            time_sec = dat.data['time']
+
+            # shift the SFE data accordingly
+            if args.sfe_raw :
+                time_sec -= time_sec[0]
+            elif args.sfe_align :
+                sink_exists = SFEs>1e-10
+                SFEs = SFEs[sink_exists]
+                time_sec = time_sec[sink_exists]
+                time_sec -= time_sec[0]
+
+            # calculate time in terms of crossing time and free-fall time
+            time_in_T = time_sec/cst.T_TURB
+            time_in_Tff = time_sec/cst.T_FF
+
+            # calculate SFE per free-fall time
+            SFR_in_Tff = np.diff(SFEs) / np.diff(time_in_Tff)
+
+
+
+
+        # export the data to a .dat file
+        if args.o is not None :
+            filename_out = args.o
+        else :
+            filename_out = "sfes.dat"
+
 
 
     if args.mean == True:

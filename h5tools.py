@@ -285,7 +285,7 @@ class H5File(object):
             self.dataname = dataname
             self.small_mem = small_mem
 
-        def calc_ps(self, save=False, filename_out=None):
+        def calc_ps(self, save=False, shift=True, filename_out=None):
             t_start = datetime.now()  # count the time
             small_mem = self.small_mem
 
@@ -319,8 +319,12 @@ class H5File(object):
             kmax = np.min(0.5 * dims / L)
 
             # bins of wavenumbers
-            # first bin = (0.5 to 1.5), second bin = (1.5 to 2.5), ...
-            k_bins = np.arange(kmin, kmax, kmin) - 0.5 * kmin
+            if shift is True:
+                # first bin = (0.5 < k <= 1.5), second bin = (1.5 < k <= 2.5), ...
+                k_bins = np.arange(kmin, kmax, kmin) - 0.5 * kmin
+            else :
+                # first bin = (0 < k <= 1), second bin = (1 < k <= 2), ...
+                k_bins = np.arange(kmin, kmax, kmin) - kmin
 
             # holder for the power spectrum
             ps_1D = np.zeros(len(k_bins))
@@ -337,7 +341,7 @@ class H5File(object):
             gc.collect()
 
             # determine the location of the bins
-            loc_bins = np.searchsorted(k_sorted, k_bins, sorter=None)
+            loc_bins = np.searchsorted(k_sorted, k_bins, sorter=None, side='left')
             # sum the power spectrum under the bins
             ps_1D = [np.sum(ps_sorted[loc_bins[i]:loc_bins[i + 1]]) for i in range(len(k_bins) - 1)]
 
@@ -347,13 +351,17 @@ class H5File(object):
             t_end = datetime.now()
             delta = t_end - t_start
             print("completed!")
-            print("time taken: {}".format(delta.total_seconds()))
+            print(f"time taken: {delta.total_seconds():.1f} sec")
 
             # save the power spectrum if asked
             if save is True:
                 dataname_ps = self.dataname + "ps"
                 if filename_out is None:
-                    filename_out = self.H5File.filename + f"_{dataname_ps}.dat"
+                    if shift :
+                        shiftlabel = ""
+                    else :
+                        shiftlabel = "_noshift"
+                    filename_out = self.H5File.filename + f"_{dataname_ps}{shiftlabel}.dat"
                 save_to_dat(filename_out,
                             (self.k, 'k'), (self.ps, dataname_ps))
         # end def calc_ps
@@ -389,7 +397,11 @@ class H5File(object):
 
         def __init__(self, H5File, dataname, small_mem=False):
             super().__init__(H5File, dataname, small_mem=small_mem)
-            self.data = sort_field(H5File, H5File.h5f[dataname])
+            if small_mem is True :
+                H5File.h5f[dataname]
+                self.data = None
+            else :
+                self.data = sort_field(H5File, H5File.h5f[dataname])
 
         def calc_proj(self, axis):
             if axis == 'x':
@@ -428,7 +440,7 @@ class H5File(object):
 
             t_end = datetime.now()
             delta = t_end - t_start
-            print("time taken: {}".format(delta.total_seconds()))
+            print(f"time taken: {delta.total_seconds():.1f} sec")
 
             if save is True:
                 dataname_ps = self.dataname + "ps3D"
@@ -462,10 +474,12 @@ class H5File(object):
 
         def set_log(self):
             self.data = np.log(self.data / np.mean(self.data))
+            self.dataname = "s"
 
         def set_delta(self):
             self.set_log()
             self.data = self.data - np.mean(self.data)
+            self.dataname = "delta"
 
     class VectorDataset(Dataset):
         """
@@ -542,7 +556,7 @@ class H5File(object):
 
             t_end = datetime.now()
             delta = t_end - t_start
-            print("time taken: {}".format(delta.total_seconds()))
+            print(f"time taken: {delta.total_seconds():.1f} sec")
 
             # save the power spectrum if required
             if save is True:
